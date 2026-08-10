@@ -1,0 +1,37 @@
+{
+  "requestsFinished": 0,
+  "requestsFailed": 1,
+  "requestsRetries": 0,
+  "requestsFailedPerMinute": 1052,
+  "requestsFinishedPerMinute": 0,
+  "requestMinDurationMillis": null,
+  "requestMaxDurationMillis": 0,
+  "requestTotalFailedDurationMillis": 3,
+  "requestTotalFinishedDurationMillis": 0,
+  "crawlerStartedAt": "2026-08-10T21:33:51.348Z",
+  "crawlerFinishedAt": "2026-08-10T21:33:51.397Z",
+  "statsPersistedAt": "2026-08-10T21:33:51.397Z",
+  "crawlerRuntimeMillis": 57,
+  "crawlerLastStartTimestamp": 1786397631340,
+  "requestRetryHistogram": [
+    1
+  ],
+  "statsId": "1",
+  "requestAvgFailedDurationMillis": 3,
+  "requestAvgFinishedDurationMillis": null,
+  "requestTotalDurationMillis": 3,
+  "requestsTotal": 1,
+  "requestsWithStatusCode": {},
+  "errors": {
+    "/Users/yahyakhan/Desktop/Lead Forge/lib/lead-engine/crawler/crawlee.ts:164:37": {
+      "missing error code": {
+        "SsrfBlockedError": {
+          "Blocked suspect network target: hostname resolves to blocked address 127.0.0.1": {
+            "count": 1
+          }
+        }
+      }
+    }
+  },
+  "retryErrors": {}
+}

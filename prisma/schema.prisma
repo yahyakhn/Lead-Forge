@@ -6,3 +6,473 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+enum Role {
+  ADMIN
+  MEMBER
+}
+
+enum CompanyStatus {
+  ACTIVE
+  INACTIVE
+  PROSPECT
+  CUSTOMER
+  ARCHIVED
+}
+
+enum ContactVerificationStatus {
+  UNKNOWN
+  UNVERIFIED
+  VERIFIED
+  INVALID
+}
+
+enum LeadStatus {
+  NEW
+  REVIEW
+  QUALIFIED
+  DISQUALIFIED
+  CONTACTED
+  ENGAGED
+  OPPORTUNITY
+  CONVERTED
+  LOST
+}
+
+enum LeadPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum ActivityType {
+  NOTE
+  EMAIL
+  CALL
+  MEETING
+  TASK
+  STATUS_CHANGE
+  RESEARCH
+}
+
+enum LeadSourceType {
+  WEB_SEARCH
+  WEBSITE
+  DIRECTORY
+  JOB_BOARD
+  SOCIAL_PUBLIC
+  PUBLIC_DATABASE
+  SITEMAP
+  CUSTOM
+}
+
+enum SourceCapability {
+  DISCOVERY
+  SCRAPING
+  SEARCH
+  DIRECTORY
+  COMPANY_EXTRACTION
+  CONTACT_EXTRACTION
+  EMAIL_EXTRACTION
+}
+
+enum ScraperRunStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  PARTIAL
+  FAILED
+  CANCELLED
+}
+
+enum ScraperRunEventLevel {
+  INFO
+  WARNING
+  ERROR
+}
+
+model User {
+  id             String       @id @default(cuid())
+  email          String       @unique
+  passwordHash   String
+  name           String
+  role           Role         @default(MEMBER)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sessions       Session[]
+  ownedLeads     Lead[]       @relation("LeadOwner")
+  ownedDeals     Deal[]       @relation("DealOwner")
+  createdActivities Activity[] @relation("ActivityCreator")
+  createdLists   LeadList[]   @relation("LeadListCreator")
+  createdICPs    ICPProfile[] @relation("ICPCreator")
+  createdSources LeadSource[] @relation("LeadSourceCreator")
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+model Organization {
+  id            String           @id @default(cuid())
+  name          String
+  users         User[]
+  sessions      Session[]
+  companies     Company[]
+  contacts      Contact[]
+  leads         Lead[]
+  leadLists     LeadList[]
+  activities    Activity[]
+  pipelineStages PipelineStage[]
+  deals         Deal[]
+  icpProfiles   ICPProfile[]
+  leadSources   LeadSource[]
+  scraperRuns   ScraperRun[]
+  rawLeads      RawLead[]
+  rawPages      RawPage[]
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+}
+
+model Session {
+  id             String       @id @default(cuid())
+  token          String       @unique
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  expiresAt      DateTime
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId])
+}
+
+model Company {
+  id              String           @id @default(cuid())
+  organizationId  String
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name            String
+  normalizedName  String
+  domain          String?
+  website         String?
+  industry        String?
+  employeeCount   Int?
+  employeeRange   String?
+  revenueRange    String?
+  country         String?
+  state           String?
+  city            String?
+  description     String?
+  phone           String?
+  linkedinUrl     String?
+  status          CompanyStatus    @default(PROSPECT)
+  contacts        Contact[]
+  leads           Lead[]
+  activities      Activity[]
+  deals           Deal[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  lastVerifiedAt  DateTime?
+
+  @@unique([organizationId, domain])
+  @@index([organizationId, normalizedName])
+  @@index([organizationId, name])
+  @@index([organizationId, createdAt])
+}
+
+model Contact {
+  id                 String                   @id @default(cuid())
+  organizationId     String
+  organization       Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  companyId          String?
+  company            Company?                 @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  firstName          String
+  lastName           String?
+  fullName           String
+  jobTitle           String?
+  department         String?
+  email              String?
+  phone              String?
+  linkedinUrl        String?
+  confidence         Float?
+  verificationStatus ContactVerificationStatus @default(UNKNOWN)
+  leads              Lead[]
+  activities         Activity[]
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+
+  @@unique([organizationId, email])
+  @@index([organizationId, fullName])
+  @@index([organizationId, companyId])
+}
+
+model Lead {
+  id               String           @id @default(cuid())
+  organizationId   String
+  organization     Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  companyId        String?
+  company          Company?         @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  contactId        String?
+  contact          Contact?         @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  status           LeadStatus       @default(NEW)
+  score            Int?
+  fitScore         Int?
+  intentScore      Int?
+  engagementScore  Int?
+  priority         LeadPriority     @default(MEDIUM)
+  ownerId          String?
+  owner            User?            @relation("LeadOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  source           String?
+  lists            LeadListMembership[]
+  activities       Activity[]
+  deals            Deal[]
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  lastActivityAt   DateTime?
+
+  @@index([organizationId, status])
+  @@index([organizationId, score])
+  @@index([organizationId, priority])
+  @@index([organizationId, ownerId])
+  @@index([organizationId, companyId])
+  @@index([organizationId, contactId])
+  @@index([organizationId, createdAt])
+  @@index([organizationId, updatedAt])
+}
+
+model LeadList {
+  id             String               @id @default(cuid())
+  organizationId String
+  organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  description    String?
+  createdById    String?
+  createdBy      User?                @relation("LeadListCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  memberships    LeadListMembership[]
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+
+model LeadListMembership {
+  id         String   @id @default(cuid())
+  listId     String
+  list       LeadList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  leadId     String
+  lead       Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([listId, leadId])
+  @@index([leadId])
+}
+
+model Activity {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  leadId         String?
+  lead           Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  companyId      String?
+  company        Company?     @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  contactId      String?
+  contact        Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  type           ActivityType
+  title          String
+  description    String?
+  createdById    String?
+  createdBy      User?        @relation("ActivityCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, leadId])
+  @@index([organizationId, companyId])
+  @@index([organizationId, contactId])
+  @@index([organizationId, createdAt])
+}
+
+model PipelineStage {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  slug           String
+  position       Int
+  color          String?
+  isClosed       Boolean      @default(false)
+  isWon          Boolean      @default(false)
+  deals          Deal[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, slug])
+  @@index([organizationId, position])
+}
+
+model ICPProfile {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  description    String?
+  criteria       Json
+  isActive       Boolean      @default(false)
+  createdById    String?
+  createdBy      User?        @relation("ICPCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  scraperRuns    ScraperRun[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, name])
+  @@index([organizationId, isActive])
+  @@index([organizationId, createdAt])
+}
+
+model Deal {
+  id                String         @id @default(cuid())
+  organizationId    String
+  organization      Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  leadId            String?
+  lead              Lead?          @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  companyId         String?
+  company           Company?       @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  name              String
+  value             Decimal        @default(0)
+  currency          String         @default("USD")
+  stageId           String
+  stage             PipelineStage  @relation(fields: [stageId], references: [id], onDelete: Restrict)
+  expectedCloseDate DateTime?
+  description       String?
+  ownerId           String?
+  owner             User?          @relation("DealOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  @@index([organizationId, stageId])
+  @@index([organizationId, leadId])
+  @@index([organizationId, ownerId])
+  @@index([organizationId, createdAt])
+}
+
+model LeadSource {
+  id             String             @id @default(cuid())
+  organizationId String
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  slug           String
+  type           LeadSourceType
+  description    String?
+  isActive       Boolean            @default(false)
+  config         Json
+  capabilities   SourceCapability[]
+  createdById    String?
+  createdBy      User?              @relation("LeadSourceCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  runs           ScraperRun[]
+  rawLeads       RawLead[]
+  rawPages       RawPage[]
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@unique([organizationId, slug])
+  @@index([organizationId, type])
+  @@index([organizationId, isActive])
+  @@index([organizationId, createdAt])
+}
+
+model RawLead {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sourceId       String
+  source         LeadSource   @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  runId          String
+  run            ScraperRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
+  externalId     String?
+  rawData        Json
+  sourceUrl      String?
+  discoveredAt   DateTime     @default(now())
+  createdAt      DateTime     @default(now())
+
+  @@unique([organizationId, sourceId, externalId])
+  @@index([organizationId, sourceId])
+  @@index([organizationId, runId])
+  @@index([organizationId, externalId])
+  @@index([organizationId, createdAt])
+}
+
+model RawPage {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  runId          String
+  run            ScraperRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
+  sourceId       String
+  source         LeadSource   @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  url            String
+  statusCode     Int?
+  errorCategory  String?
+  title          String?
+  contentType    String?
+  html           String?      @db.Text
+  textContent    String?      @db.Text
+  metadata       Json?
+  fetchedAt      DateTime     @default(now())
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, runId])
+  @@index([organizationId, sourceId])
+  @@index([organizationId, url])
+  @@index([organizationId, statusCode])
+  @@index([organizationId, createdAt])
+}
+
+model ScraperRun {
+  id               String              @id @default(cuid())
+  organizationId   String
+  organization     Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sourceId         String
+  source           LeadSource          @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  icpId            String?
+  icp              ICPProfile?         @relation(fields: [icpId], references: [id], onDelete: SetNull)
+  status           ScraperRunStatus    @default(QUEUED)
+  startedAt        DateTime?
+  finishedAt       DateTime?
+  heartbeatAt      DateTime?
+  recordsFound     Int                 @default(0)
+  recordsProcessed Int                 @default(0)
+  recordsCreated   Int                 @default(0)
+  recordsUpdated   Int                 @default(0)
+  recordsDuplicate Int                 @default(0)
+  recordsFailed    Int                 @default(0)
+  pagesDiscovered  Int                 @default(0)
+  pagesQueued      Int                 @default(0)
+  pagesProcessed   Int                 @default(0)
+  pagesSucceeded   Int                 @default(0)
+  pagesFailed      Int                 @default(0)
+  pagesSkipped     Int                 @default(0)
+  errorMessage     String?
+  metadata         Json?
+  events           ScraperRunEvent[]
+  rawLeads         RawLead[]
+  rawPages         RawPage[]
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  @@index([organizationId, sourceId])
+  @@index([organizationId, icpId])
+  @@index([organizationId, status])
+  @@index([organizationId, createdAt])
+  @@index([organizationId, startedAt])
+  @@index([organizationId, status, heartbeatAt])
+}
+
+model ScraperRunEvent {
+  id        String                @id @default(cuid())
+  runId     String
+  run       ScraperRun            @relation(fields: [runId], references: [id], onDelete: Cascade)
+  level     ScraperRunEventLevel  @default(INFO)
+  message   String
+  metadata  Json?
+  createdAt DateTime              @default(now())
+
+  @@index([runId, createdAt])
+  @@index([runId, level])
+}

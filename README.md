@@ -9,9 +9,10 @@ commercialize later.
 
 ## Status
 
-Task 001 (project foundation) is complete: Next.js, TypeScript (strict),
-Tailwind, shadcn/ui, PostgreSQL, Prisma, Docker Compose, ESLint, Prettier,
-Vitest, health endpoint. No CRM functionality yet.
+Task 001 (project foundation) and Task 002 (authentication) are complete:
+Next.js, TypeScript (strict), Tailwind, shadcn/ui, PostgreSQL, Prisma, Docker
+Compose, ESLint, Prettier, Vitest, health endpoint, login/logout, protected
+routes, organizations. No CRM functionality yet.
 
 ## Requirements
 
@@ -40,10 +41,22 @@ See `.env.example`. Key values:
 | `AI_PROVIDER`  | `deepseek` / mock (later tasks)         |
 | `AI_MODEL`     | Model name (later tasks)                |
 | `AI_API_KEY`   | Provider key (later tasks)              |
-| `AUTH_SECRET`  | Session secret (later tasks)            |
 | `APP_URL`      | Public app URL                          |
 
 Never commit real secrets — `.env` is gitignored.
+
+## Authentication
+
+Register (`/register`) creates a user, a fresh organization (the user becomes
+its ADMIN), and a session in one step. Sign in at `/login`; sign out from the
+dashboard. Sessions are opaque random tokens stored in the database
+(`Session` model, 30-day expiry) in an httpOnly cookie — no JWT or secret key
+is needed. Passwords are hashed with `crypto.scrypt`
+(N=2^15, r=8, p=1, unique 16-byte salt).
+
+Every query must be scoped to the session's `organizationId`
+(`session.organization.id`). The dashboard (`/dashboard`) is protected via
+`requireSession()`; API routes check `getSession()` and return 401.
 
 ## Database setup
 
