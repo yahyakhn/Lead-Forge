@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/db"
-import { orgWhere } from "@/lib/crm/scope"
 import type { LeadInput } from "@/lib/crm/validators"
 import { parsePagination } from "@/lib/crm/pagination"
 import type { Prisma } from "@/generated/prisma/client"
@@ -10,7 +9,10 @@ const LEAD_INCLUDE = {
   company: { select: { id: true, name: true, domain: true } },
   contact: { select: { id: true, fullName: true, email: true, jobTitle: true } },
   owner: { select: { id: true, name: true } },
+  sourceCandidate: { select: { id: true, companyName: true, contactFullName: true, runId: true } },
 } as const
+
+export const LEAD_SOURCE_OPTIONS = ["MANUAL", "WEBSITE", "SCRAPER", "IMPORT", "REFERRAL"] as const
 
 export async function createLead(orgId: string, input: LeadInput) {
   await requireCompany(orgId, input.companyId)
@@ -21,7 +23,7 @@ export async function createLead(orgId: string, input: LeadInput) {
 
 export async function getLead(orgId: string, id: string) {
   return prisma.lead.findFirst({
-    where: { id, ...orgWhere(orgId) },
+    where: { id, { organizationId: orgId } },
     include: LEAD_INCLUDE,
   })
 }
@@ -37,16 +39,18 @@ export interface LeadFilters {
   minScore?: number
   maxScore?: number
   search?: string
+  source?: string
 }
 
 export async function listLeads(orgId: string, filters: LeadFilters) {
   const { page, pageSize } = parsePagination(filters)
   const search = filters.search?.trim()
   const where: Prisma.LeadWhereInput = {
-    ...orgWhere(orgId),
+    { organizationId: orgId },
     ...(filters.status ? { status: filters.status as LeadStatus } : {}),
     ...(filters.priority ? { priority: filters.priority as LeadPriority } : {}),
     ...(filters.ownerId ? { ownerId: filters.ownerId } : {}),
+    ...(filters.source ? { source: filters.source } : {}),
     ...(filters.companyId ? { companyId: filters.companyId } : {}),
     ...(filters.contactId ? { contactId: filters.contactId } : {}),
     ...(filters.minScore !== undefined ? { score: { gte: filters.minScore } } : {}),
@@ -89,19 +93,19 @@ export async function updateLead(orgId: string, id: string, input: Partial<LeadI
 }
 
 export async function deleteLead(orgId: string, id: string): Promise<boolean> {
-  const result = await prisma.lead.deleteMany({ where: { id, ...orgWhere(orgId) } })
+  const result = await prisma.lead.deleteMany({ where: { id, { organizationId: orgId } } })
   return result.count > 0
 }
 
 async function requireCompany(orgId: string, companyId?: string) {
   if (!companyId) return
-  const company = await prisma.company.findFirst({ where: { id: companyId, ...orgWhere(orgId) } })
+  const company = await prisma.company.findFirst({ where: { id: companyId, { organizationId: orgId } } })
   if (!company) throw new Error("Company does not exist in this organization")
 }
 
 async function requireContact(orgId: string, contactId?: string) {
   if (!contactId) return
-  const contact = await prisma.contact.findFirst({ where: { id: contactId, ...orgWhere(orgId) } })
+  const contact = await prisma.contact.findFirst({ where: { id: contactId, { organizationId: orgId } } })
   if (!contact) throw new Error("Contact does not exist in this organization")
 }
 

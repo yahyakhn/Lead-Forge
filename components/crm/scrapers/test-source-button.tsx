@@ -11,12 +11,13 @@ export function TestSourceButton({ sourceId, icpOptions }: { sourceId: string; i
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [icpId, setIcpId] = useState("")
+  const [name, setName] = useState("")
   const [error, setError] = useState("")
 
   const run = () => {
     setError("")
     startTransition(async () => {
-      const result = await runScraperAction(sourceId, icpId || null, true)
+      const result = await runScraperAction(sourceId, icpId || null, true, name || undefined)
       if (!result.ok) {
         setError(result.error ?? "Something went wrong")
         return
@@ -29,6 +30,12 @@ export function TestSourceButton({ sourceId, icpOptions }: { sourceId: string; i
     <div>
       <div className="flex flex-wrap items-center gap-2">
         <SearchableSelect options={icpOptions} value={icpId} onValueChange={setIcpId} placeholder="ICP (optional)" className="w-56" />
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Run name (optional)"
+          className="h-9 w-48 rounded-md border bg-background px-3 text-sm"
+        />
         <Button onClick={run} disabled={pending}>
           <PlayIcon className="size-4" />
           {pending ? "Starting…" : "Test Source"}

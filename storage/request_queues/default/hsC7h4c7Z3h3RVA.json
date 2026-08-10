@@ -1,9 +1,0 @@
-{
-	"id": "hsC7h4c7Z3h3RVA",
-	"json": "{\"id\":\"hsC7h4c7Z3h3RVA\",\"url\":\"http://127.0.0.1:62863/\",\"uniqueKey\":\"http://127.0.0.1:62863\",\"method\":\"GET\",\"noRetry\":false,\"retryCount\":0,\"errorMessages\":[\"SsrfBlockedError: Blocked suspect network target: hostname resolves to blocked address 127.0.0.1\\n    at __vite_ssr_import_0__.CheerioCrawler.preNavigationHooks (/Users/yahyakhan/Desktop/Lead Forge/lib/lead-engine/crawler/crawlee.ts:164:37)\\n    at CheerioCrawler._executeHooks (/Users/yahyakhan/Desktop/Lead Forge/node_modules/@crawlee/basic/internals/basic-crawler.js:1404:17)\\n    at CheerioCrawler._handleNavigation (/Users/yahyakhan/Desktop/Lead Forge/node_modules/@crawlee/http/internals/http-crawler.js:390:9)\\n    at CheerioCrawler._runRequestHandler (/Users/yahyakhan/Desktop/Lead Forge/node_modules/@crawlee/http/internals/http-crawler.js:303:13)\\n    at CheerioCrawler._runRequestHandler (/Users/yahyakhan/Desktop/Lead Forge/node_modules/@crawlee/cheerio/internals/cheerio-crawler.js:155:9)\\n    at wrap (/Users/yahyakhan/Desktop/Lead Forge/node_modules/@apify/timeout/cjs/index.cjs:56:21)\"],\"headers\":{},\"userData\":{\"__crawlee\":{\"state\":5}},\"handledAt\":\"2026-08-10T21:33:51.395Z\"}",
-	"method": "GET",
-	"orderNo": null,
-	"retryCount": 0,
-	"uniqueKey": "http://127.0.0.1:62863",
-	"url": "http://127.0.0.1:62863/"
-}

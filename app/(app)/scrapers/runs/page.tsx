@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { requireSession } from "@/lib/auth"
-import { listRuns } from "@/lib/lead-engine/runs"
+import { listRuns, runDisplayName } from "@/lib/lead-engine/runs"
 import { PageHeader } from "@/components/crm/page-header"
 import { FilterSelect } from "@/components/crm/search-bar"
 import { EmptyState, ErrorState } from "@/components/crm/states"
@@ -70,7 +70,7 @@ export default async function ScraperRunsPage({ searchParams }: { searchParams: 
                 <TableRow key={run.id} className="hover:bg-muted/50">
                   <TableCell>
                     <Link href={`/scrapers/runs/${run.id}`} className="font-medium hover:underline">
-                      Run #{run.id.slice(-6)}
+                      {runDisplayName(run, `${run.source.name} `)}
                     </Link>
                   </TableCell>
                   <TableCell>

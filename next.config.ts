@@ -1,5 +1,7 @@
 import type { NextConfig } from "next"
 
-const nextConfig: NextConfig = {/* config options here */}
+const nextConfig: NextConfig = {
+  serverExternalPackages: ["crawlee", "puppeteer", "playwright"],
+}
 
 export default nextConfig

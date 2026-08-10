@@ -1,0 +1,249 @@
+import Link from "next/link"
+import { requireSession } from "@/lib/auth"
+import { listCandidates } from "@/lib/lead-engine/extraction/service"
+import { prisma } from "@/lib/db"
+import { PageHeader } from "@/components/crm/page-header"
+import { ErrorState, EmptyState } from "@/components/crm/states"
+import { Pagination } from "@/components/crm/pagination"
+import { CandidateStatusBadge, ExtractionMethodBadge } from "@/components/crm/lead-engine/candidate-badges"
+import { ConvertSelectedBar } from "@/components/crm/lead-engine/convert-selected-bar"
+import { isConvertibleStatus } from "@/lib/lead-engine/conversion/service"
+import { formatDateTime } from "@/lib/format"
+import { CandidateStatus, ExtractionMethod } from "@/generated/prisma/enums"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { ScanSearchIcon } from "lucide-react"
+
+type SearchParams = Record<string, string | string[] | undefined>
+
+const selectOptions = (values: readonly string[]) => (
+  <>
+    <option value="">Any</option>
+    {values.map((value) => (
+      <option key={value} value={value}>
+        {value}
+      </option>
+    ))}
+  </>
+)
+
+const enumOptions = (enumObject: Record<string, string>) => selectOptions(Object.values(enumObject))
+
+export default async function CandidatesPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
+  const session = await requireSession()
+  const sp = await searchParams
+  const first = (k: string) => (typeof sp[k] === "string" ? (sp[k] as string) : undefined)
+
+  let candidates
+  try {
+    candidates = await listCandidates(session.organization.id, {
+      page: sp.page,
+      pageSize: sp.pageSize,
+      method: first("method"),
+      status: first("status"),
+      sourceId: first("source"),
+      runId: first("run"),
+      hasEmail: first("hasEmail"),
+      hasContact: first("hasContact"),
+      hasPhone: first("hasPhone"),
+      hasLinkedIn: first("hasLinkedIn"),
+      companyDomain: first("domain"),
+      minQuality: first("minQuality"),
+      sort: first("sort"),
+      q: first("q"),
+    })
+  } catch {
+    return <ErrorState message="We couldn't load lead candidates." />
+  }
+
+  const [sources, runs] = await Promise.all([
+    prisma.leadSource.findMany({ where: { organizationId: session.organization.id }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    prisma.scraperRun.findMany({
+      where: { organizationId: session.organization.id },
+      select: { id: true, createdAt: true },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    }),
+  ])
+
+  return (
+    <div>
+      <PageHeader title="Lead Candidates" description="Extracted from scraped pages — not yet verified CRM leads." />
+
+      <form className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border bg-card p-4">
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Query
+          <input name="q" defaultValue={first("q") ?? ""} placeholder="Company, contact, email…" className="h-9 w-56 rounded-md border bg-background px-3 text-sm" />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Method
+          <select name="method" defaultValue={first("method") ?? ""} className="h-9 rounded-md border bg-background px-3 text-sm">
+            {enumOptions(ExtractionMethod)}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Status
+          <select name="status" defaultValue={first("status") ?? ""} className="h-9 rounded-md border bg-background px-3 text-sm">
+            {enumOptions(CandidateStatus)}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Source
+          <select name="source" defaultValue={first("source") ?? ""} className="h-9 rounded-md border bg-background px-3 text-sm">
+            <option value="">Any</option>
+            {sources.map((source) => (
+              <option key={source.id} value={source.id}>
+                {source.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Run
+          <select name="run" defaultValue={first("run") ?? ""} className="h-9 rounded-md border bg-background px-3 text-sm">
+            <option value="">Any</option>
+            {runs.map((run) => (
+              <option key={run.id} value={run.id}>
+                #{run.id.slice(-6)} · {formatDateTime(run.createdAt)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-center gap-2 pb-2 text-sm">
+          <input type="checkbox" name="hasEmail" value="1" defaultChecked={first("hasEmail") !== undefined} className="size-4" />
+          Has email
+        </label>
+        <label className="flex items-center gap-2 pb-2 text-sm">
+          <input type="checkbox" name="hasContact" value="1" defaultChecked={first("hasContact") !== undefined} className="size-4" />
+          Has contact
+        </label>
+        <label className="flex items-center gap-2 pb-2 text-sm">
+          <input type="checkbox" name="hasPhone" value="1" defaultChecked={first("hasPhone") !== undefined} className="size-4" />
+          Has phone
+        </label>
+        <label className="flex items-center gap-2 pb-2 text-sm">
+          <input type="checkbox" name="hasLinkedIn" value="1" defaultChecked={first("hasLinkedIn") !== undefined} className="size-4" />
+          Has LinkedIn
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Min quality
+          <input type="number" name="minQuality" min={0} max={100} defaultValue={first("minQuality") ?? ""} placeholder="0-100" className="h-9 w-24 rounded-md border bg-background px-3 text-sm" />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Domain
+          <input name="domain" defaultValue={first("domain") ?? ""} placeholder="acme.com" className="h-9 w-36 rounded-md border bg-background px-3 text-sm" />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Sort
+          <select name="sort" defaultValue={first("sort") ?? ""} className="h-9 rounded-md border bg-background px-3 text-sm">
+            <option value="">Newest</option>
+            <option value="oldest">Oldest</option>
+            <option value="quality">Quality</option>
+            <option value="company">Company</option>
+            <option value="confidence">Confidence</option>
+          </select>
+        </label>
+        <button type="submit" className="h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground">
+          Filter
+        </button>
+      </form>
+
+      <div className="mb-4">
+        <ConvertSelectedBar
+          candidates={candidates.data
+            .filter((c) => isConvertibleStatus(c.status))
+            .map((c) => ({
+              id: c.id,
+              label: c.companyName ?? c.contactFullName ?? c.id.slice(-6),
+              eligible: true,
+            }))}
+        />
+      </div>
+
+      <div className="rounded-xl border bg-card">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Company</TableHead>
+              <TableHead>Contact</TableHead>
+              <TableHead>Title</TableHead>
+              <TableHead>Email</TableHead>
+              <TableHead>Domain</TableHead>
+              <TableHead>Method</TableHead>
+              <TableHead>Quality</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Created</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {candidates.data.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={9}>
+                  <EmptyState
+                    title="No candidates yet"
+                    description="Run a scraper and then start extraction on the run page to generate lead candidates."
+                    action={
+                      <Link href="/scrapers" className="text-sm font-medium underline-offset-4 hover:underline">
+                        <ScanSearchIcon className="mr-1 inline size-4" /> Go to Scrapers
+                      </Link>
+                    }
+                  />
+                </TableCell>
+              </TableRow>
+            ) : (
+              candidates.data.map((candidate) => (
+                <TableRow key={candidate.id} className="cursor-pointer hover:bg-muted/50">
+                  <TableCell>
+                    <Link href={`/lead-engine/candidates/${candidate.id}`} className="font-medium underline-offset-4 hover:underline">
+                      {candidate.companyName ?? "—"}
+                    </Link>
+                    {candidate.pageClassification ? (
+                      <span className="ml-2 text-xs text-muted-foreground">{candidate.pageClassification.toLowerCase()}</span>
+                    ) : null}
+                  </TableCell>
+                  <TableCell>{candidate.contactFullName ?? "—"}</TableCell>
+                  <TableCell>{candidate.contactJobTitle ?? "—"}</TableCell>
+                  <TableCell>{candidate.email ?? "—"}</TableCell>
+                  <TableCell>{candidate.companyDomain ?? "—"}</TableCell>
+                  <TableCell>
+                    <ExtractionMethodBadge method={candidate.extractionMethod} />
+                  </TableCell>
+                  <TableCell>
+                    {candidate.dataQualityScore !== null ? (
+                      <span
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium tabular-nums ${
+                          candidate.dataQualityScore >= 70
+                            ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                            : candidate.dataQualityScore >= 40
+                              ? "bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                              : "bg-destructive/10 text-destructive"
+                        }`}
+                      >
+                        {candidate.dataQualityScore}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <CandidateStatusBadge status={candidate.status} />
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatDateTime(candidate.createdAt)}</TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      <div className="mt-4">
+        <Pagination
+          pathname="/lead-engine/candidates"
+          params={{ ...sp }}
+          page={candidates.page}
+          totalPages={candidates.totalPages}
+          total={candidates.total}
+        />
+      </div>
+    </div>
+  )
+}

@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/db"
-import { orgWhere } from "@/lib/crm/scope"
 import type { LeadStatus } from "@/generated/prisma/client"
 import { updateLead } from "@/lib/crm/leads"
 
@@ -43,15 +42,15 @@ export async function createDefaultPipelineStages(orgId: string): Promise<void> 
 
 export async function listStages(orgId: string) {
   return prisma.pipelineStage.findMany({
-    where: orgWhere(orgId),
+    where: { organizationId: orgId },
     orderBy: { position: "asc" },
   })
 }
 
 export async function moveLeadToStage(orgId: string, leadId: string, stageId: string, userId?: string) {
   const [stage, lead] = await Promise.all([
-    prisma.pipelineStage.findFirst({ where: { id: stageId, ...orgWhere(orgId) } }),
-    prisma.lead.findFirst({ where: { id: leadId, ...orgWhere(orgId) } }),
+    prisma.pipelineStage.findFirst({ where: { id: stageId, { organizationId: orgId } } }),
+    prisma.lead.findFirst({ where: { id: leadId, { organizationId: orgId } } }),
   ])
   if (!stage) throw new Error("Pipeline stage does not exist in this organization")
   if (!lead) throw new Error("Lead does not exist in this organization")

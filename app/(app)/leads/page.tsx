@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { requireSession } from "@/lib/auth"
-import { listLeads } from "@/lib/crm/leads"
+import { listLeads, LEAD_SOURCE_OPTIONS } from "@/lib/crm/leads"
 import { listUsers, listCompanyOptions, listContactOptions } from "@/lib/crm/options"
 import { LeadForm, LEAD_PRIORITY_OPTIONS, LEAD_STATUS_OPTIONS } from "@/components/crm/forms"
 import { PageHeader } from "@/components/crm/page-header"
@@ -37,6 +37,7 @@ export default async function LeadsPage({
         status: first("status"),
         priority: first("priority"),
         ownerId: first("owner"),
+        source: first("source"),
         minScore: minScore ? Number(minScore) : undefined,
         maxScore: undefined,
       }),
@@ -70,6 +71,7 @@ export default async function LeadsPage({
         <FilterSelect param="status" placeholder="Status" options={LEAD_STATUS_OPTIONS} />
         <FilterSelect param="priority" placeholder="Priority" options={LEAD_PRIORITY_OPTIONS} />
         <FilterSelect param="owner" placeholder="Owner" options={ownerOptions} />
+        <FilterSelect param="source" placeholder="Source" options={LEAD_SOURCE_OPTIONS.map((s) => ({ value: s, label: s }))} />
         <FilterSelect
           param="minScore"
           placeholder="Min score"
@@ -84,7 +86,7 @@ export default async function LeadsPage({
 
       {result.data.length === 0 ? (
         <EmptyState
-          title={sp.search || sp.status || sp.priority || sp.owner || minScore ? "No leads match your filters" : "No leads yet"}
+          title={sp.search || sp.status || sp.priority || sp.owner || minScore || sp.source ? "No leads match your filters" : "No leads yet"}
           description={
             sp.search || sp.status || sp.priority || sp.owner || minScore
               ? "Try adjusting your search or filters."
@@ -102,6 +104,7 @@ export default async function LeadsPage({
                 <TableHead>Priority</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Owner</TableHead>
+                <TableHead>Source</TableHead>
                 <TableHead className="text-right">Created</TableHead>
               </TableRow>
             </TableHeader>
@@ -127,6 +130,7 @@ export default async function LeadsPage({
                     <StatusBadge status={lead.status} />
                   </TableCell>
                   <TableCell>{lead.owner?.name ?? "—"}</TableCell>
+                  <TableCell className="whitespace-nowrap text-xs">{lead.source || "—"}</TableCell>
                   <TableCell className="text-right whitespace-nowrap text-muted-foreground">
                     {formatDate(lead.createdAt)}
                   </TableCell>

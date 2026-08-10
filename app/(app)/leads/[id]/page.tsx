@@ -124,6 +124,28 @@ export default async function LeadDetailPage({
           </section>
 
           <section className="rounded-xl border bg-card p-4">
+            <h2 className="mb-3 text-sm font-semibold">Provenance</h2>
+            {lead.sourceCandidate ? (
+              <div className="space-y-2 text-sm">
+                <p className="text-muted-foreground">
+                  Converted from lead candidate{" "}
+                  <Link href={`/lead-engine/candidates/${lead.sourceCandidate.id}`} className="text-primary underline-offset-4 hover:underline">
+                    #{lead.sourceCandidate.id.slice(-6)}
+                  </Link>
+                </p>
+                <dl className="grid grid-cols-2 gap-x-6 gap-y-2">
+                  <Detail label="Candidate company" value={lead.sourceCandidate.companyName ?? "—"} />
+                  <Detail label="Candidate contact" value={lead.sourceCandidate.contactFullName ?? "—"} />
+                  <Detail label="Source" value={lead.source ?? "—"} />
+                  <Detail label="Scraper run" value={`#${lead.sourceCandidate.runId.slice(-6)}`} />
+                </dl>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">{lead.source ? `Imported via ${lead.source}.` : "No provenance details recorded."}</p>
+            )}
+          </section>
+
+          <section className="rounded-xl border bg-card p-4">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-sm font-semibold">Deals</h2>
             </div>

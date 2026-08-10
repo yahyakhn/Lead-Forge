@@ -31,6 +31,7 @@ import {
   ListIcon,
   MenuIcon,
   RadarIcon,
+  LayersIcon,
   ScanLineIcon,
   TargetIcon,
   Users2Icon,
@@ -60,6 +61,8 @@ const NAV: NavGroup[] = [
       { href: "/lead-lists", label: "Lead Lists", icon: ListIcon },
       { href: "/scrapers", label: "Scrapers", icon: ScanLineIcon },
       { href: "/scrapers/runs", label: "Scraper Runs", icon: FlaskConicalIcon },
+      { href: "/lead-engine/candidates", label: "Candidates", icon: RadarIcon },
+      { href: "/lead-engine/duplicates", label: "Duplicates", icon: LayersIcon },
     ],
   },
   {

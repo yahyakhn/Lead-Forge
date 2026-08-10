@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/db"
-import { orgWhere } from "@/lib/crm/scope"
 import type { PipelineStageInput } from "@/lib/crm/validators"
 
 function slugify(name: string): string {
@@ -10,7 +9,7 @@ export async function createStage(orgId: string, input: PipelineStageInput) {
   const slug = input.slug ?? slugify(input.name)
   const position =
     input.position ??
-    (await prisma.pipelineStage.count({ where: orgWhere(orgId) })) + 1
+    (await prisma.pipelineStage.count({ where: { organizationId: orgId } })) + 1
   try {
     return await prisma.pipelineStage.create({
       data: {
@@ -32,7 +31,7 @@ export async function createStage(orgId: string, input: PipelineStageInput) {
 }
 
 export async function updateStage(orgId: string, id: string, input: Partial<PipelineStageInput>) {
-  const existing = await prisma.pipelineStage.findFirst({ where: { id, ...orgWhere(orgId) } })
+  const existing = await prisma.pipelineStage.findFirst({ where: { id, { organizationId: orgId } } })
   if (!existing) return null
   const { ...data } = input
   if (input.slug === "" || input.slug === undefined) delete data.slug
@@ -41,7 +40,7 @@ export async function updateStage(orgId: string, id: string, input: Partial<Pipe
 
 export async function deleteStage(orgId: string, id: string) {
   try {
-    const result = await prisma.pipelineStage.deleteMany({ where: { id, ...orgWhere(orgId) } })
+    const result = await prisma.pipelineStage.deleteMany({ where: { id, { organizationId: orgId } } })
     return result.count > 0
   } catch {
     throw new Error("Stage cannot be deleted while deals reference it")

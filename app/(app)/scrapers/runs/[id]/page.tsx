@@ -1,17 +1,20 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { requireSession } from "@/lib/auth"
-import { getRun, listRawLeads, listRunEvents, listRawPages } from "@/lib/lead-engine/runs"
+import { getRun, listRawLeads, listRunEvents, listRawPages, runDisplayName } from "@/lib/lead-engine/runs"
 import { PageHeader } from "@/components/crm/page-header"
 import { ErrorState } from "@/components/crm/states"
 import { Pagination } from "@/components/crm/pagination"
 import { RunStatusBadge, EventLevelBadge } from "@/components/crm/scrapers/scraper-badges"
 import { CancelRunButton } from "@/components/crm/scrapers/cancel-run-button"
 import { RunStatusPoller } from "@/components/crm/scrapers/run-status-poller"
+import { RunExtractionButton } from "@/components/crm/lead-engine/run-extraction-button"
+import { RunDeduplicationButton } from "@/components/crm/lead-engine/run-deduplication-button"
+import { getExtractionRun } from "@/lib/lead-engine/extraction/service"
 import { RawLeadDialog } from "@/components/crm/scrapers/raw-lead-dialog"
 import { RawPageDialog } from "@/components/crm/scrapers/raw-page-dialog"
 import { formatDateTime, formatDuration } from "@/lib/format"
-import { ScraperRunEventLevel, ScraperRunStatus } from "@/generated/prisma/enums"
+import { ScraperRunEventLevel, ScraperRunStatus, CandidateStatus } from "@/generated/prisma/enums"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 
 type SearchParams = Record<string, string | string[] | undefined>
@@ -57,12 +60,14 @@ export default async function RunDetailPage({ params, searchParams }: { params: 
 
   const running = run.status === ScraperRunStatus.QUEUED || run.status === ScraperRunStatus.RUNNING
   const recentErrors = errorPage ? errorPage.data : []
+  const extraction = await getExtractionRun(session.organization.id, run.id)
+  const extractionRunning = extraction !== null && (extraction.status === CandidateStatus.PENDING || extraction.status === CandidateStatus.PROCESSING)
 
   return (
     <div>
       <RunStatusPoller status={run.status} />
       <PageHeader
-        title={`Run #${run.id.slice(-6)}`}
+        title={runDisplayName(run, `${run.source.name} `)}
         description={`${run.source.name} · ${formatDateTime(run.createdAt)}`}
         actions={
           <div className="flex items-center gap-2">
@@ -90,6 +95,30 @@ export default async function RunDetailPage({ params, searchParams }: { params: 
               <Stat label="Failed" value={run.pagesFailed} />
               <Stat label="Skipped" value={run.pagesSkipped} />
             </dl>
+          </section>
+
+          <section className="rounded-xl border bg-card p-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Extraction</h2>
+              <div className="flex items-center gap-2">
+                <RunExtractionButton runId={run.id} running={extractionRunning} />
+                <RunDeduplicationButton runId={run.id} />
+              </div>
+            </div>
+            {extraction ? (
+              <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+                <Stat label="Pages processed" value={extraction.pagesProcessed} />
+                <Stat label="Candidates created" value={extraction.candidatesCreated} />
+                <Stat label="Skipped" value={extraction.pagesSkipped} />
+                <Stat label="Failed" value={extraction.pagesFailed} />
+                <Stat label="AI calls" value={extraction.aiCalls} />
+                <Stat label="AI failures" value={extraction.aiFailures} />
+              </dl>
+            ) : (
+              <p className="mt-4 text-sm text-muted-foreground">
+                No extraction run yet. {run.pagesProcessed > 0 ? "Raw pages are ready — start extraction to build lead candidates." : "Run the scraper first to produce raw pages."}
+              </p>
+            )}
           </section>
 
           <section className="rounded-xl border bg-card p-5">

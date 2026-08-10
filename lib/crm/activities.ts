@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/db"
-import { orgWhere } from "@/lib/crm/scope"
 import type { ActivityInput } from "@/lib/crm/validators"
 import { parsePagination } from "@/lib/crm/pagination"
 import type { Prisma } from "@/generated/prisma/client"
@@ -11,14 +10,14 @@ const ACTIVITY_INCLUDE = {
   createdBy: { select: { id: true, name: true } },
 } as const
 
-export async function createActivity(orgId: string, input: ActivityInput, createdById?: string) {
-  await requireRefs(orgId, input)
-  const activity = await prisma.activity.create({
+export async function createActivity(orgId: string, input: ActivityInput, createdById?: string, db: Prisma.TransactionClient = prisma) {
+  await requireRefs(orgId, input, db)
+  const activity = await db.activity.create({
     data: { ...input, organizationId: orgId, createdById },
     include: ACTIVITY_INCLUDE,
   })
   if (input.leadId) {
-    await prisma.lead.update({
+    await db.lead.update({
       where: { id: input.leadId },
       data: { lastActivityAt: new Date() },
     })
@@ -27,7 +26,7 @@ export async function createActivity(orgId: string, input: ActivityInput, create
 }
 
 export async function getActivity(orgId: string, id: string) {
-  return prisma.activity.findFirst({ where: { id, ...orgWhere(orgId) }, include: ACTIVITY_INCLUDE })
+  return prisma.activity.findFirst({ where: { id, { organizationId: orgId } }, include: ACTIVITY_INCLUDE })
 }
 
 export interface ActivityFilters {
@@ -41,7 +40,7 @@ export interface ActivityFilters {
 export async function listActivities(orgId: string, filters: ActivityFilters) {
   const { page, pageSize } = parsePagination(filters)
   const where: Prisma.ActivityWhereInput = {
-    ...orgWhere(orgId),
+    { organizationId: orgId },
     ...(filters.leadId ? { leadId: filters.leadId } : {}),
     ...(filters.companyId ? { companyId: filters.companyId } : {}),
     ...(filters.contactId ? { contactId: filters.contactId } : {}),
@@ -54,21 +53,21 @@ export async function listActivities(orgId: string, filters: ActivityFilters) {
 }
 
 export async function deleteActivity(orgId: string, id: string): Promise<boolean> {
-  const result = await prisma.activity.deleteMany({ where: { id, ...orgWhere(orgId) } })
+  const result = await prisma.activity.deleteMany({ where: { id, { organizationId: orgId } } })
   return result.count > 0
 }
 
-async function requireRefs(orgId: string, input: ActivityInput) {
+async function requireRefs(orgId: string, input: ActivityInput, db: Prisma.TransactionClient) {
   if (input.leadId) {
-    const lead = await prisma.lead.findFirst({ where: { id: input.leadId, ...orgWhere(orgId) } })
+    const lead = await db.lead.findFirst({ where: { id: input.leadId, { organizationId: orgId } } })
     if (!lead) throw new Error("Lead does not exist in this organization")
   }
   if (input.companyId) {
-    const company = await prisma.company.findFirst({ where: { id: input.companyId, ...orgWhere(orgId) } })
+    const company = await db.company.findFirst({ where: { id: input.companyId, { organizationId: orgId } } })
     if (!company) throw new Error("Company does not exist in this organization")
   }
   if (input.contactId) {
-    const contact = await prisma.contact.findFirst({ where: { id: input.contactId, ...orgWhere(orgId) } })
+    const contact = await db.contact.findFirst({ where: { id: input.contactId, { organizationId: orgId } } })
     if (!contact) throw new Error("Contact does not exist in this organization")
   }
 }

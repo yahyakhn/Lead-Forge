@@ -75,6 +75,7 @@ export default async function CompanyDetailPage({
           <section className="rounded-xl border bg-card p-4">
             <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
               <Detail label="Domain" value={company.domain ?? "—"} />
+              <Detail label="Source" value={company.source ?? "—"} />
               <Detail label="Website" value={company.website ?? "—"} link={company.website ?? undefined} />
               <Detail label="Industry" value={company.industry ?? "—"} />
               <Detail

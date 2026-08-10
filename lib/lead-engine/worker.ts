@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/db"
-import { orgWhere } from "@/lib/crm/scope"
 import { getAdapterForType } from "@/lib/lead-engine/registry"
 import { addRunEvent } from "@/lib/lead-engine/runs"
 import { ScraperRunEventLevel, ScraperRunStatus } from "@/generated/prisma/enums"
@@ -12,10 +11,6 @@ function isUniqueViolation(e: unknown): boolean {
 async function isRunCancelled(runId: string): Promise<boolean> {
   const run = await prisma.scraperRun.findUnique({ where: { id: runId }, select: { status: true } })
   return run?.status === ScraperRunStatus.CANCELLED
-}
-
-async function settleCancelled(runId: string): Promise<void> {
-  await addRunEvent(runId, ScraperRunEventLevel.WARNING, "Run cancelled")
 }
 
 async function settleFailure(runId: string, message: string): Promise<void> {
@@ -39,7 +34,7 @@ export async function executeRun(runId: string): Promise<void> {
     console.log(`scraper.run.started runId=${runId}`)
 
     const orgId = run.organizationId
-    const source = await prisma.leadSource.findFirst({ where: { id: run.sourceId, ...orgWhere(orgId) } })
+    const source = await prisma.leadSource.findFirst({ where: { id: run.sourceId, { organizationId: orgId } } })
     if (!source) throw new Error("Source not found")
     const adapter = getAdapterForType(source.type)
     if (!adapter) throw new Error(`No adapter available for source type ${source.type}`)
@@ -47,7 +42,7 @@ export async function executeRun(runId: string): Promise<void> {
     if (!validation.ok) throw new Error(validation.error)
 
     if (await isRunCancelled(runId)) {
-      await settleCancelled(runId)
+      await addRunEvent(runId, ScraperRunEventLevel.WARNING, "Run cancelled")
       return
     }
 
@@ -83,7 +78,7 @@ export async function executeRun(runId: string): Promise<void> {
       })
     }
     if (await isRunCancelled(runId)) {
-      await settleCancelled(runId)
+      await addRunEvent(runId, ScraperRunEventLevel.WARNING, "Run cancelled")
       return
     }
     await addRunEvent(runId, ScraperRunEventLevel.INFO, `Received ${result.records.length} raw records`)
@@ -94,7 +89,7 @@ export async function executeRun(runId: string): Promise<void> {
     let failed = 0
     for (const record of result.records) {
       if (await isRunCancelled(runId)) {
-        await settleCancelled(runId)
+        await addRunEvent(runId, ScraperRunEventLevel.WARNING, "Run cancelled")
         return
       }
       const data = {

@@ -77,6 +77,7 @@ export default async function ContactDetailPage({
           <section className="rounded-xl border bg-card p-4">
             <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
               <Detail label="Company" value={contact.company?.name ?? "—"} link={contact.company ? `/companies/${contact.company.id}` : undefined} />
+              <Detail label="Source" value={contact.source ?? "—"} />
               <Detail label="Email" value={contact.email ?? "—"} />
               <Detail label="Phone" value={contact.phone ?? "—"} />
               <Detail label="LinkedIn" value={contact.linkedinUrl ?? "—"} link={contact.linkedinUrl ?? undefined} />

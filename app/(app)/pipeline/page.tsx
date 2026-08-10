@@ -1,7 +1,6 @@
 import { requireSession } from "@/lib/auth"
 import { listStages } from "@/lib/crm/pipeline"
 import { prisma } from "@/lib/db"
-import { orgWhere } from "@/lib/crm/scope"
 import { PageHeader } from "@/components/crm/page-header"
 import { ErrorState } from "@/components/crm/states"
 import { PipelineBoard, type BoardLead } from "@/components/crm/pipeline-board"
@@ -23,7 +22,7 @@ export default async function PipelinePage() {
   try {
     for (const stage of stages) {
       const leads = await prisma.lead.findMany({
-        where: { ...orgWhere(orgId), status: stage.slug.toUpperCase() as LeadStatus },
+        where: { { organizationId: orgId }, status: stage.slug.toUpperCase() as LeadStatus },
         select: {
           id: true,
           score: true,

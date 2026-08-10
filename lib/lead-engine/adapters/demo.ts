@@ -1,6 +1,12 @@
-import { demoConfigSchema } from "@/lib/lead-engine/config-schemas"
+import { z } from "zod"
 import type { ConfigValidation, DiscoveryInput, DiscoveryTarget, LeadSourceAdapter, ScrapeInput, ScrapeResult } from "@/lib/lead-engine/types"
 import { LeadSourceType, SourceCapability } from "@/generated/prisma/enums"
+
+export const demoConfigSchema = z
+  .object({
+    maxResults: z.number().int().min(1).max(50).optional(),
+  })
+  .strict()
 
 const COMPANIES = [
   { name: "Northwind Software", domain: "northwind.io", industry: "SaaS" },

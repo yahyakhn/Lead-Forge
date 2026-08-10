@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/db"
-import { orgWhere } from "@/lib/crm/scope"
 import { parsePagination } from "@/lib/crm/pagination"
 import { getAdapterForType } from "@/lib/lead-engine/registry"
 import type { LeadSourceInput } from "@/lib/lead-engine/validators"
@@ -17,7 +16,7 @@ function toSlug(name: string): string {
 
 async function assertSlugAvailable(orgId: string, slug: string, excludeId?: string): Promise<void> {
   const existing = await prisma.leadSource.findFirst({
-    where: { ...orgWhere(orgId), slug, ...(excludeId ? { id: { not: excludeId } } : {}) },
+    where: { { organizationId: orgId }, slug, ...(excludeId ? { id: { not: excludeId } } : {}) },
     select: { id: true },
   })
   if (existing) throw new Error("A source with this name already exists")
@@ -66,7 +65,7 @@ function withLastRun<T extends { runs: { id: string; status: ScraperRunStatus; c
 }
 
 export async function getSource(orgId: string, id: string) {
-  const row = await prisma.leadSource.findFirst({ where: { id, ...orgWhere(orgId) }, include: sourceInclude() })
+  const row = await prisma.leadSource.findFirst({ where: { id, { organizationId: orgId } }, include: sourceInclude() })
   return row ? withLastRun(row) : null
 }
 
@@ -80,7 +79,7 @@ export async function listSources(orgId: string, filters: SourceFilters = {}) {
   const { page, pageSize } = parsePagination(filters)
   const search = filters.search?.trim()
   const where: Prisma.LeadSourceWhereInput = {
-    ...orgWhere(orgId),
+    { organizationId: orgId },
     ...(search ? { name: { contains: search, mode: "insensitive" } } : {}),
   }
   const [total, data] = await Promise.all([
@@ -91,7 +90,7 @@ export async function listSources(orgId: string, filters: SourceFilters = {}) {
 }
 
 export async function updateSource(orgId: string, id: string, input: Partial<LeadSourceInput>) {
-  const existing = await prisma.leadSource.findFirst({ where: { id, ...orgWhere(orgId) }, select: { id: true, type: true, name: true } })
+  const existing = await prisma.leadSource.findFirst({ where: { id, { organizationId: orgId } }, select: { id: true, type: true, name: true } })
   if (!existing) return null
   if (input.config !== undefined) validateConfig(existing.type, input.config)
   const name = input.name ?? existing.name
@@ -109,12 +108,12 @@ export async function updateSource(orgId: string, id: string, input: Partial<Lea
 }
 
 export async function activateSource(orgId: string, id: string): Promise<boolean> {
-  const result = await prisma.leadSource.updateMany({ where: { id, ...orgWhere(orgId) }, data: { isActive: true } })
+  const result = await prisma.leadSource.updateMany({ where: { id, { organizationId: orgId } }, data: { isActive: true } })
   return result.count > 0
 }
 
 export async function deactivateSource(orgId: string, id: string): Promise<boolean> {
-  const result = await prisma.leadSource.updateMany({ where: { id, ...orgWhere(orgId) }, data: { isActive: false } })
+  const result = await prisma.leadSource.updateMany({ where: { id, { organizationId: orgId } }, data: { isActive: false } })
   return result.count > 0
 }
 
@@ -129,7 +128,7 @@ export async function validateSourceConfig(type: NonNullable<LeadSourceInput["ty
 
 export async function deleteSource(orgId: string, id: string): Promise<boolean> {
   try {
-    const result = await prisma.leadSource.deleteMany({ where: { id, ...orgWhere(orgId) } })
+    const result = await prisma.leadSource.deleteMany({ where: { id, { organizationId: orgId } } })
     return result.count > 0
   } catch (e) {
     if (e instanceof Error && "code" in e && (e as { code?: string }).code === "P2003") {

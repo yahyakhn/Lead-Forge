@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/db"
-import { orgWhere } from "@/lib/crm/scope"
 import { normalizeCriteria, type ICPCriteria } from "@/lib/crm/icp-shared"
 import { parsePagination } from "@/lib/crm/pagination"
 import type { IcpInput } from "@/lib/crm/validators"
@@ -22,7 +21,7 @@ function toView(row: { id: string; name: string; description: string | null; cri
 
 async function assertNameAvailable(orgId: string, name: string, excludeId?: string): Promise<void> {
   const existing = await prisma.iCPProfile.findFirst({
-    where: { ...orgWhere(orgId), name: { equals: name, mode: "insensitive" }, ...(excludeId ? { id: { not: excludeId } } : {}) },
+    where: { { organizationId: orgId }, name: { equals: name, mode: "insensitive" }, ...(excludeId ? { id: { not: excludeId } } : {}) },
     select: { id: true },
   })
   if (existing) throw new Error("An ICP with this name already exists")
@@ -44,12 +43,12 @@ export async function createICP(orgId: string, userId: string | undefined, input
 }
 
 export async function getICP(orgId: string, id: string): Promise<ICPView | null> {
-  const row = await prisma.iCPProfile.findFirst({ where: { id, ...orgWhere(orgId) } })
+  const row = await prisma.iCPProfile.findFirst({ where: { id, { organizationId: orgId } } })
   return row ? toView(row) : null
 }
 
 export async function getActiveICP(orgId: string): Promise<ICPView | null> {
-  const row = await prisma.iCPProfile.findFirst({ where: { ...orgWhere(orgId), isActive: true } })
+  const row = await prisma.iCPProfile.findFirst({ where: { { organizationId: orgId }, isActive: true } })
   return row ? toView(row) : null
 }
 
@@ -63,7 +62,7 @@ export async function listICPs(orgId: string, filters: ICPFilters = {}) {
   const { page, pageSize } = parsePagination(filters)
   const search = filters.search?.trim()
   const where: Prisma.ICPProfileWhereInput = {
-    ...orgWhere(orgId),
+    { organizationId: orgId },
     ...(search
       ? {
           OR: [
@@ -96,7 +95,7 @@ export async function updateICP(orgId: string, id: string, input: IcpInput): Pro
 }
 
 export async function deleteICP(orgId: string, id: string): Promise<boolean> {
-  const result = await prisma.iCPProfile.deleteMany({ where: { id, ...orgWhere(orgId) } })
+  const result = await prisma.iCPProfile.deleteMany({ where: { id, { organizationId: orgId } } })
   return result.count > 0
 }
 
@@ -104,14 +103,14 @@ export async function activateICP(orgId: string, id: string): Promise<ICPView | 
   const target = await getICP(orgId, id)
   if (!target) return null
   await prisma.$transaction([
-    prisma.iCPProfile.updateMany({ where: { ...orgWhere(orgId), isActive: true }, data: { isActive: false } }),
+    prisma.iCPProfile.updateMany({ where: { { organizationId: orgId }, isActive: true }, data: { isActive: false } }),
     prisma.iCPProfile.update({ where: { id }, data: { isActive: true } }),
   ])
   return { ...target, isActive: true }
 }
 
 export async function deactivateICP(orgId: string, id: string): Promise<boolean> {
-  const result = await prisma.iCPProfile.updateMany({ where: { id, ...orgWhere(orgId) }, data: { isActive: false } })
+  const result = await prisma.iCPProfile.updateMany({ where: { id, { organizationId: orgId } }, data: { isActive: false } })
   return result.count > 0
 }
 
@@ -120,7 +119,7 @@ export async function duplicateICP(orgId: string, id: string): Promise<ICPView |
   if (!source) return null
   const base = `${source.name} Copy`
   let name = base
-  for (let i = 2; i <= 10 && (await prisma.iCPProfile.findFirst({ where: { ...orgWhere(orgId), name } })); i++) {
+  for (let i = 2; i <= 10 && (await prisma.iCPProfile.findFirst({ where: { { organizationId: orgId }, name } })); i++) {
     name = `${base} ${i}`
   }
   const row = await prisma.iCPProfile.create({

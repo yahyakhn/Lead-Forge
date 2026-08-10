@@ -44,7 +44,11 @@ import {
   deactivateSource,
 } from "@/lib/lead-engine/sources"
 import { createRun, cancelRun, getRawPage } from "@/lib/lead-engine/runs"
-import { jobQueue } from "@/lib/lead-engine/job-queue"
+import { enqueueRun, enqueueExtractionRun } from "@/lib/lead-engine/job-queue"
+import { startExtraction } from "@/lib/lead-engine/extraction/service"
+import { deduplicateRun } from "@/lib/lead-engine/resolution/service"
+import { confirmDuplicateGroup, rejectDuplicateGroup } from "@/lib/lead-engine/resolution/groups"
+import { convertCandidate, bulkConvert, bulkPreview, type BulkSummary, type PreviewPlan } from "@/lib/lead-engine/conversion/service"
 
 export type ActionResult = { ok: true; id?: string; redirectTo?: string } | { ok: false; error: string }
 
@@ -216,12 +220,12 @@ export async function deactivateLeadSourceAction(id: string): Promise<ActionResu
   return mutate((orgId) => deactivateSource(orgId, id), ["/scrapers/sources", `/scrapers/sources/${id}`])
 }
 
-export async function runScraperAction(sourceId: string, icpId: string | null, test = false): Promise<ActionResult> {
+export async function runScraperAction(sourceId: string, icpId: string | null, test = false, name?: string): Promise<ActionResult> {
   const session = await requireSession()
   try {
-    const run = await createRun(session.organization.id, session.user.id, { sourceId, icpId: icpId ?? undefined, test })
-    jobQueue.enqueue(run.id)
-    console.log(`scraper.run.created runId=${run.id} sourceId=${sourceId} test=${test}`)
+    const run = await createRun(session.organization.id, session.user.id, { sourceId, icpId: icpId ?? undefined, test, name })
+    enqueueRun(run.id)
+    console.log(`scraper.run.created runId=${run.id} sourceId=${sourceId} test=${test} name=${name ?? ""}`)
     return { ok: true, id: run.id, redirectTo: `/scrapers/runs/${run.id}` }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Something went wrong" }
@@ -229,14 +233,84 @@ export async function runScraperAction(sourceId: string, icpId: string | null, t
 }
 
 export async function cancelRunAction(runId: string): Promise<ActionResult> {
-  return mutate((orgId) => {
-    jobQueue.cancel(runId)
-    return cancelRun(orgId, runId)
-  }, [`/scrapers/runs/${runId}`, "/scrapers/runs"])
+  return mutate((orgId) => cancelRun(orgId, runId), [`/scrapers/runs/${runId}`, "/scrapers/runs"])
+}
+
+export async function deduplicateRunAction(runId: string): Promise<ActionResult> {
+  return mutate((orgId) => deduplicateRun(orgId, runId), [`/lead-engine/duplicates`, `/scrapers/runs/${runId}`])
+}
+
+export async function confirmDuplicateAction(groupId: string): Promise<ActionResult> {
+  return mutate(
+    async (orgId, userId) => {
+      const session = await requireSession()
+      await confirmDuplicateGroup(orgId, groupId, { id: userId, name: session.user.name })
+    },
+    [`/lead-engine/duplicates/${groupId}`, "/lead-engine/duplicates"],
+  )
+}
+
+export async function rejectDuplicateAction(groupId: string): Promise<ActionResult> {
+  return mutate(
+    async (orgId, userId) => {
+      const session = await requireSession()
+      await rejectDuplicateGroup(orgId, groupId, { id: userId, name: session.user.name })
+    },
+    [`/lead-engine/duplicates/${groupId}`, "/lead-engine/duplicates"],
+  )
+}
+
+export async function runExtractionAction(runId: string): Promise<ActionResult> {
+  return mutate(
+    async (orgId) => {
+      const started = await startExtraction(orgId, runId)
+      if (!started.ok) throw new Error(started.error)
+      enqueueExtractionRun(started.id)
+    },
+    [`/scrapers/runs/${runId}`],
+  )
 }
 
 const TEXT_PREVIEW_MAX = 3000
 const HEADINGS_MAX = 25
+
+export async function convertCandidateAction(candidateId: string): Promise<ActionResult> {
+  const session = await requireSession()
+  try {
+    const result = await convertCandidate(session.organization.id, candidateId, session.user.id)
+    if (!result.ok) return { ok: false, error: result.error ?? "Conversion failed" }
+    for (const path of ["/lead-engine/candidates", `/lead-engine/candidates/${candidateId}`, "/leads", "/companies", "/contacts", "/dashboard"]) {
+      revalidatePath(path)
+    }
+    return { ok: true, redirectTo: result.conversion?.leadId ? `/leads/${result.conversion.leadId}` : undefined }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Conversion failed" }
+  }
+}
+
+export async function previewBulkAction(candidateIds: string[]): Promise<{ ok: boolean; plan?: PreviewPlan[]; error?: string }> {
+  const session = await requireSession()
+  try {
+    return { ok: true, plan: await bulkPreview(session.organization.id, candidateIds) }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Preview failed" }
+  }
+}
+
+export async function bulkConvertAction(candidateIds: string[]): Promise<{ ok: boolean; summary?: BulkSummary; error?: string }> {
+  const session = await requireSession()
+  try {
+    const summary = await bulkConvert(session.organization.id, candidateIds, session.user.id)
+    revalidatePath("/lead-engine/candidates")
+    revalidatePath("/leads")
+    revalidatePath("/companies")
+    revalidatePath("/contacts")
+    revalidatePath("/dashboard")
+    return { ok: true, summary }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Conversion failed" }
+  }
+}
 
 export async function getRawPageAction(pageId: string): Promise<
   | { ok: false; error: string }

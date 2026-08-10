@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/db"
-import { orgWhere } from "@/lib/crm/scope"
 import { buildFullName } from "@/lib/crm/normalize"
 import type { ContactInput } from "@/lib/crm/validators"
 import { parsePagination } from "@/lib/crm/pagination"
@@ -17,7 +16,7 @@ export async function createContact(orgId: string, input: ContactInput) {
 
 export async function getContact(orgId: string, id: string) {
   return prisma.contact.findFirst({
-    where: { id, ...orgWhere(orgId) },
+    where: { id, { organizationId: orgId } },
     include: CONTACT_INCLUDE,
   })
 }
@@ -34,7 +33,7 @@ export async function listContacts(orgId: string, filters: ContactFilters) {
   const { page, pageSize } = parsePagination(filters)
   const search = filters.search?.trim()
   const where: Prisma.ContactWhereInput = {
-    ...orgWhere(orgId),
+    { organizationId: orgId },
     ...(filters.companyId ? { companyId: filters.companyId } : {}),
     ...(filters.verificationStatus
       ? { verificationStatus: filters.verificationStatus as ContactVerificationStatus }
@@ -73,13 +72,13 @@ export async function updateContact(orgId: string, id: string, input: Partial<Co
 }
 
 export async function deleteContact(orgId: string, id: string): Promise<boolean> {
-  const result = await prisma.contact.deleteMany({ where: { id, ...orgWhere(orgId) } })
+  const result = await prisma.contact.deleteMany({ where: { id, { organizationId: orgId } } })
   return result.count > 0
 }
 
 async function requireCompany(orgId: string, companyId?: string) {
   if (!companyId) return
-  const company = await prisma.company.findFirst({ where: { id: companyId, ...orgWhere(orgId) } })
+  const company = await prisma.company.findFirst({ where: { id: companyId, { organizationId: orgId } } })
   if (!company) throw new Error("Company does not exist in this organization")
 }
 
