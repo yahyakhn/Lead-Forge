@@ -103,3 +103,32 @@ const COMPANY_STATUS_MAP: Record<string, Variant> = {
 export function CompanyStatusBadge({ status }: { status: string }) {
   return <Badge variant={COMPANY_STATUS_MAP[status] ?? "outline"}>{status}</Badge>
 }
+
+const ENRICHMENT_STATUS_MAP: Record<string, { variant: Variant; className: string }> = {
+  QUEUED: { variant: "secondary", className: "" },
+  RUNNING: { variant: "outline", className: "bg-blue-100 text-blue-800 dark:bg-blue-900/40" },
+  COMPLETED: { variant: "outline", className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40" },
+  PARTIAL: { variant: "outline", className: "bg-amber-100 text-amber-800 dark:bg-amber-900/40" },
+  FAILED: { variant: "outline", className: "bg-red-100 text-red-800 dark:bg-red-900/40" },
+  CANCELLED: { variant: "secondary", className: "" },
+}
+
+export function EnrichmentStatusBadge({ status, errorCode }: { status: string; errorCode?: string | null }) {
+  const style = ENRICHMENT_STATUS_MAP[status] ?? { variant: "outline" as const, className: "" }
+  if (!status || status === "—") return <span className="text-xs text-muted-foreground">—</span>
+  return (
+    <Badge variant={style.variant} className={style.className} title={errorCode ? `Error: ${errorCode}` : undefined}>
+      {status === "PARTIAL" ? "Partial" : status[0] + status.slice(1).toLowerCase()}
+    </Badge>
+  )
+}
+
+const CONFLICT_STATUS_MAP: Record<string, Variant> = {
+  OPEN: "destructive",
+  RESOLVED: "default",
+  DISMISSED: "secondary",
+}
+
+export function ConflictStatusBadge({ status }: { status: string }) {
+  return <Badge variant={CONFLICT_STATUS_MAP[status] ?? "outline"}>{status[0] + status.slice(1).toLowerCase()}</Badge>
+}

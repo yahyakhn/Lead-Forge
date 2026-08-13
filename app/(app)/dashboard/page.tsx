@@ -25,6 +25,7 @@ import {
   TargetIcon,
   TrophyIcon,
   AlertTriangleIcon,
+  SparklesIcon,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 
@@ -248,8 +249,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const session = await requireSession()
 
   let data: DashboardData
+  let enrichment
   try {
-    data = await getLeadEngineDashboard(session.organization.id, await searchParams)
+    ;[data, enrichment] = await Promise.all([
+      getLeadEngineDashboard(session.organization.id, await searchParams),
+      import("@/lib/lead-engine/enrichment/service").then((m) => m.enrichmentStats(session.organization.id)),
+    ])
   } catch {
     return <ErrorState message="We couldn't load your dashboard." />
   }
@@ -305,6 +310,48 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         <WorkQueue queue={data.workQueue} />
         <ScoreDistributionCard dist={data.scoreDistribution} />
       </div>
+
+      <section className="mt-6 rounded-xl border bg-card p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="flex items-center gap-2 text-sm font-semibold">
+            <SparklesIcon className="size-4 text-muted-foreground" /> Enrichment coverage
+          </h2>
+          <Link href="/lead-engine/enrichment" className="text-xs text-muted-foreground hover:underline">
+            Queue →
+          </Link>
+        </div>
+        {enrichment.eligibleCandidates === 0 ? (
+          <p className="text-sm text-muted-foreground">No candidates with a website or domain yet.</p>
+        ) : (
+          <>
+            <div className="mb-1 flex items-baseline justify-between text-xs">
+              <span className="text-muted-foreground">Candidates with enriched data</span>
+              <span className="tabular-nums">
+                <span className="font-semibold text-foreground">
+                  {enrichment.enrichedCandidates} / {enrichment.eligibleCandidates}
+                </span>
+              </span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+              <div className="h-full rounded-full bg-violet-500" style={{ width: `${enrichment.coveragePct}%` }} />
+            </div>
+            <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
+              <span>
+                <span className="font-medium text-foreground tabular-nums">{enrichment.recentlyEnriched}</span> enriched in freshness window
+              </span>
+              <span>
+                <span className="font-medium text-foreground tabular-nums">{enrichment.failedLast7d}</span> failed (7d)
+              </span>
+              <span>
+                <span className="font-medium text-foreground tabular-nums">{enrichment.openConflicts}</span>{" "}
+                <Link href="/lead-engine/candidates?enrichment=HAS_CONFLICTS" className="underline-offset-4 hover:underline">
+                  open conflicts
+                </Link>
+              </span>
+            </div>
+          </>
+        )}
+      </section>
 
       <section className="mt-6">
         <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">

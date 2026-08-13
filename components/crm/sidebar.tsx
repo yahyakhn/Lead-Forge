@@ -38,6 +38,8 @@ import {
   ChevronsUpDownIcon,
   LogOutIcon,
   XIcon,
+  SparklesIcon,
+  SettingsIcon,
 } from "lucide-react"
 
 interface NavItem {
@@ -63,6 +65,7 @@ const NAV: NavGroup[] = [
       { href: "/scrapers/runs", label: "Scraper Runs", icon: FlaskConicalIcon },
       { href: "/lead-engine/candidates", label: "Candidates", icon: RadarIcon },
       { href: "/lead-engine/duplicates", label: "Duplicates", icon: LayersIcon },
+      { href: "/lead-engine/enrichment", label: "Enrichment", icon: SparklesIcon },
     ],
   },
   {
@@ -73,6 +76,10 @@ const NAV: NavGroup[] = [
       { href: "/contacts", label: "Contacts", icon: ContactIcon },
       { href: "/pipeline", label: "Pipeline", icon: KanbanSquareIcon },
     ],
+  },
+  {
+    section: "Settings",
+    items: [{ href: "/settings/enrichment", label: "Enrichment", icon: SettingsIcon }],
   },
 ]
 

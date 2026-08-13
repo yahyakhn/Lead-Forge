@@ -20,6 +20,12 @@ import { ArrowLeftIcon } from "lucide-react"
 import { latestLeadScore, scoreHistory } from "@/lib/lead-engine/scoring/service"
 import type { CriterionResult } from "@/lib/lead-engine/scoring/engine"
 import { RescoreButton } from "@/components/crm/lead-engine/rescore-button"
+import { EnrichButton } from "@/components/crm/lead-engine/enrich-button"
+import { ResolveConflictButtons } from "@/components/crm/lead-engine/resolve-conflict-buttons"
+import { EnrichmentStatusBadge } from "@/components/crm/badges"
+import { latestEntityRequest, listEntityResults, listEntityConflicts } from "@/lib/lead-engine/enrichment/service"
+import { FIELD_LABELS } from "@/lib/lead-engine/enrichment/fields"
+import { formatDateTime } from "@/lib/format"
 
 export default async function LeadDetailPage({
   params,
@@ -31,7 +37,7 @@ export default async function LeadDetailPage({
 
   let data
   try {
-    const [lead, activities, deals, stages, users, lists, memberIds, latestScore, history] = await Promise.all([
+    const [lead, activities, deals, stages, users, lists, memberIds, latestScore, history, latestEnrichment, enrichmentResults, enrichmentConflicts] = await Promise.all([
       getLead(session.organization.id, id),
       listActivities(session.organization.id, { leadId: id, pageSize: 50 }),
       listDeals(session.organization.id, { leadId: id, pageSize: 50 }),
@@ -41,13 +47,16 @@ export default async function LeadDetailPage({
       listLeadListMembershipIds(session.organization.id, id),
       latestLeadScore(session.organization.id, id),
       scoreHistory(session.organization.id, id),
+      latestEntityRequest(session.organization.id, { leadId: id }),
+      listEntityResults(session.organization.id, { leadId: id }),
+      listEntityConflicts(session.organization.id, { leadId: id }),
     ])
-    data = { lead, activities, deals, stages, users, lists, memberIds, latestScore, history }
+    data = { lead, activities, deals, stages, users, lists, memberIds, latestScore, history, latestEnrichment, enrichmentResults, enrichmentConflicts }
   } catch {
     return <ErrorState message="We couldn't load this lead." />
   }
 
-  const { lead, activities, deals, stages, users, lists, memberIds, latestScore, history } = data
+  const { lead, activities, deals, stages, users, lists, memberIds, latestScore, history, latestEnrichment, enrichmentResults, enrichmentConflicts } = data
   if (!lead) notFound()
 
   const ownerOptions = users.map((u) => ({ value: u.id, label: u.name, hint: u.email }))
@@ -192,6 +201,54 @@ export default async function LeadDetailPage({
                 </div>
               </div>
             )}
+          </section>
+
+          <section className="rounded-xl border bg-card p-4">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-sm font-semibold">Enrichment</h2>
+              <div className="flex items-center gap-2">
+                <EnrichButton kind="lead" id={id} />
+                <EnrichButton kind="lead" id={id} force label="Refresh" />
+              </div>
+            </div>
+            {latestEnrichment ? (
+              <p className="text-sm text-muted-foreground">
+                <EnrichmentStatusBadge status={latestEnrichment.status} errorCode={latestEnrichment.errorCode} /> · {formatDateTime(latestEnrichment.requestedAt)} · {latestEnrichment.fieldsUpdated} field(s) updated
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">Fetch company and contact details from this lead&apos;s website.</p>
+            )}
+            {enrichmentResults.length > 0 ? (
+              <ul className="mt-3 space-y-1.5">
+                {enrichmentResults.map((result) => (
+                  <li key={result.id} className="flex items-baseline justify-between gap-3 text-sm">
+                    <span className="font-mono text-xs text-muted-foreground">{FIELD_LABELS[result.field as keyof typeof FIELD_LABELS] ?? result.field}</span>
+                    <span className="flex-1 break-all text-right">{result.value}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-2 text-sm text-muted-foreground">No enrichment results yet.</p>
+            )}
+            {enrichmentConflicts.length > 0 ? (
+              <div className="mt-4 border-t pt-3">
+                <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Pending conflicts</h3>
+                <ul className="mt-2 space-y-2">
+                  {enrichmentConflicts.map((conflict) => (
+                    <li key={conflict.id} className="rounded-lg border p-3 text-sm">
+                      <p className="font-mono text-xs">{FIELD_LABELS[conflict.field as keyof typeof FIELD_LABELS] ?? conflict.field}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Existing: <span className="text-foreground">{conflict.existingValue}</span> ({conflict.existingSource}) · Enriched:{" "}
+                        <span className="text-foreground">{conflict.enrichedValue}</span> ({conflict.enrichedSource}, {Math.round(conflict.confidence * 100)}% conf.)
+                      </p>
+                      <div className="mt-2">
+                        <ResolveConflictButtons conflictId={conflict.id} />
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </section>
 
           <section className="rounded-xl border bg-card p-4">

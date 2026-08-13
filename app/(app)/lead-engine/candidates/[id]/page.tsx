@@ -15,6 +15,11 @@ import { latestCandidateScore } from "@/lib/lead-engine/scoring/service"
 import type { CriterionResult } from "@/lib/lead-engine/scoring/engine"
 import { RescoreButton } from "@/components/crm/lead-engine/rescore-button"
 import { PreviewScoreButton } from "@/components/crm/lead-engine/preview-score-button"
+import { EnrichButton } from "@/components/crm/lead-engine/enrich-button"
+import { ResolveConflictButtons } from "@/components/crm/lead-engine/resolve-conflict-buttons"
+import { EnrichmentStatusBadge } from "@/components/crm/badges"
+import { latestEntityRequest, listEntityResults, listEntityConflicts } from "@/lib/lead-engine/enrichment/service"
+import { FIELD_LABELS } from "@/lib/lead-engine/enrichment/fields"
 
 function Field({ label, value }: { label: string; value: string | null | undefined }) {
   return (
@@ -59,6 +64,12 @@ export default async function CandidateDetailPage({ params }: { params: Promise<
   const preview: PreviewPlan | null = eligibility.eligible
     ? await previewCandidate(session.organization.id, candidate.id).catch(() => null)
     : null
+
+  const [latestEnrichment, enrichmentResults, enrichmentConflicts] = await Promise.all([
+    latestEntityRequest(session.organization.id, { candidateId: candidate.id }),
+    listEntityResults(session.organization.id, { candidateId: candidate.id }),
+    listEntityConflicts(session.organization.id, { candidateId: candidate.id }),
+  ])
 
   const actionLabel = (action: string | undefined) =>
     action === "CREATE" ? "create" : action === "REUSE" ? "reuse" : action === "BLOCKED" ? "blocked" : "—"
@@ -163,6 +174,84 @@ export default async function CandidateDetailPage({ params }: { params: Promise<
         <div className="mt-4 pt-4 border-t">
           <PreviewScoreButton kind="candidate" id={id} />
         </div>
+      </div>
+
+      <div className="mb-4 rounded-xl border bg-card p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Enrichment</h2>
+            {latestEnrichment ? (
+              <p className="mt-1 text-sm text-muted-foreground">
+                <EnrichmentStatusBadge status={latestEnrichment.status} errorCode={latestEnrichment.errorCode} /> · {formatDateTime(latestEnrichment.requestedAt)} · {latestEnrichment.fieldsUpdated} field(s) updated
+              </p>
+            ) : (
+              <p className="mt-1 text-sm text-muted-foreground">Fetch contact and company details from the candidate&apos;s website.</p>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <EnrichButton kind="candidate" id={candidate.id} force={false} />
+            <EnrichButton kind="candidate" id={candidate.id} force label="Refresh" />
+          </div>
+        </div>
+
+        {enrichmentResults.length > 0 ? (
+          <table className="mt-4 w-full text-left text-sm">
+            <thead>
+              <tr className="border-b text-xs text-muted-foreground">
+                <th className="py-1.5 pr-4 font-medium">Field</th>
+                <th className="py-1.5 pr-4 font-medium">Value</th>
+                <th className="py-1.5 pr-4 font-medium">Source</th>
+                <th className="py-1.5 pr-4 text-right font-medium">Confidence</th>
+                <th className="py-1.5 pr-4 font-medium">Status</th>
+                <th className="py-1.5 font-medium">Observed</th>
+              </tr>
+            </thead>
+            <tbody>
+              {enrichmentResults.map((result) => (
+                <tr key={result.id} className="border-b last:border-0">
+                  <td className="py-1.5 pr-4 font-mono text-xs align-top">{FIELD_LABELS[result.field as keyof typeof FIELD_LABELS] ?? result.field}</td>
+                  <td className="py-1.5 pr-4 break-all">{result.value}</td>
+                  <td className="py-1.5 pr-4 text-xs text-muted-foreground">{result.source}</td>
+                  <td className="py-1.5 pr-4 text-right tabular-nums">{Math.round(result.confidence * 100)}%</td>
+                  <td className="py-1.5 pr-4 text-xs">
+                    {result.status === "CONFLICT" ? (
+                      <span className="text-amber-600">conflict</span>
+                    ) : result.status === "REJECTED" ? (
+                      <span className="text-destructive">rejected</span>
+                    ) : result.status === "CONFIRMED" ? (
+                      <span className="text-blue-600">matched</span>
+                    ) : (
+                      <span className="text-emerald-600">applied</span>
+                    )}
+                  </td>
+                  <td className="py-1.5 text-xs text-muted-foreground">{formatDateTime(result.observedAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="mt-3 text-sm text-muted-foreground">No enrichment results yet.</p>
+        )}
+
+        {enrichmentConflicts.length > 0 ? (
+          <div className="mt-4 border-t pt-4">
+            <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Pending conflicts</h3>
+            <ul className="mt-2 space-y-2">
+              {enrichmentConflicts.map((conflict) => (
+                <li key={conflict.id} className="rounded-lg border p-3 text-sm">
+                  <p className="font-mono text-xs">{FIELD_LABELS[conflict.field as keyof typeof FIELD_LABELS] ?? conflict.field}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Existing: <span className="text-foreground">{conflict.existingValue}</span> ({conflict.existingSource}) · Enriched:{" "}
+                    <span className="text-foreground">{conflict.enrichedValue}</span> ({conflict.enrichedSource}, {Math.round(conflict.confidence * 100)}% conf.)
+                  </p>
+                  <div className="mt-2">
+                    <ResolveConflictButtons conflictId={conflict.id} />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </div>
 
       <div className="mb-4 grid gap-4 rounded-xl border bg-card p-5 lg:grid-cols-2">

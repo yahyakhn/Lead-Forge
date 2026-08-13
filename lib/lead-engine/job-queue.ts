@@ -1,6 +1,7 @@
 import { executeRun } from "@/lib/lead-engine/worker"
 import { runExtractionJob } from "@/lib/lead-engine/extraction/service"
 import { runScoringJob } from "@/lib/lead-engine/scoring/service"
+import { runEnrichmentJob } from "@/lib/lead-engine/enrichment/service"
 
 // In-process development queue. Runs are executed shortly after enqueue in
 // this process; cancellation is honored because the worker re-checks the
@@ -33,6 +34,16 @@ export function enqueueScoringJob(jobId: string): void {
       await runScoringJob(jobId)
     } catch (e) {
       console.log(`scoring.queue.error jobId=${jobId} error=${e instanceof Error ? e.message : "unknown"}`)
+    }
+  })
+}
+
+export function enqueueEnrichmentJob(requestId: string): void {
+  setImmediate(async () => {
+    try {
+      await runEnrichmentJob(requestId)
+    } catch (e) {
+      console.log(`enrichment.queue.error requestId=${requestId} error=${e instanceof Error ? e.message : "unknown"}`)
     }
   })
 }

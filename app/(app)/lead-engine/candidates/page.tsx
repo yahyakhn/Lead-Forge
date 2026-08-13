@@ -8,12 +8,13 @@ import { Pagination } from "@/components/crm/pagination"
 import { CandidateStatusBadge, ExtractionMethodBadge } from "@/components/crm/lead-engine/candidate-badges"
 import { ConvertSelectedBar } from "@/components/crm/lead-engine/convert-selected-bar"
 import { ScoreSelectedBar } from "@/components/crm/lead-engine/score-selected-bar"
+import { EnrichSelectedBar } from "@/components/crm/lead-engine/enrich-selected-bar"
 import { isConvertibleStatus } from "@/lib/lead-engine/conversion/service"
 import { formatDateTime } from "@/lib/format"
 import { CandidateStatus, ExtractionMethod } from "@/generated/prisma/enums"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScanSearchIcon } from "lucide-react"
-import { ScoreBadge } from "@/components/crm/badges"
+import { ScoreBadge, EnrichmentStatusBadge } from "@/components/crm/badges"
 
 type SearchParams = Record<string, string | string[] | undefined>
 
@@ -56,6 +57,7 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
       minIcpScore: first("minIcpScore"),
       minOverallScore: first("minOverallScore"),
       qualification: first("qualification"),
+      enrichment: first("enrichment") as "NOT_ENRICHED" | "RECENTLY_ENRICHED" | "NEEDS_REFRESH" | "FAILED" | "ACTIVE" | "HAS_CONFLICTS" | undefined,
     })
   } catch {
     return <ErrorState message="We couldn't load lead candidates." />
@@ -164,6 +166,18 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
             {qualificationOptions}
           </select>
         </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Enrichment
+          <select name="enrichment" defaultValue={first("enrichment") ?? ""} className="h-9 rounded-md border bg-background px-3 text-sm">
+            <option value="">Any</option>
+            <option value="NOT_ENRICHED">Not enriched</option>
+            <option value="RECENTLY_ENRICHED">Recently enriched</option>
+            <option value="NEEDS_REFRESH">Needs refresh</option>
+            <option value="FAILED">Failed</option>
+            <option value="ACTIVE">In progress</option>
+            <option value="HAS_CONFLICTS">Has conflicts</option>
+          </select>
+        </label>
         <button type="submit" className="h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground">
           Filter
         </button>
@@ -185,6 +199,12 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
             label: c.companyName ?? c.contactFullName ?? c.id.slice(-6),
           }))}
         />
+        <EnrichSelectedBar
+          candidates={candidates.data.map((c) => ({
+            id: c.id,
+            label: c.companyName ?? c.contactFullName ?? c.id.slice(-6),
+          }))}
+        />
       </div>
 
       <div className="rounded-xl border bg-card">
@@ -201,6 +221,7 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
               <TableHead className="text-right">ICP Score</TableHead>
               <TableHead className="text-right">Overall</TableHead>
               <TableHead>Qualification</TableHead>
+              <TableHead>Enrichment</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Created</TableHead>
             </TableRow>
@@ -283,6 +304,9 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
                       ) : (
                         <span className="text-xs text-muted-foreground">Not scored</span>
                       )}
+                    </TableCell>
+                    <TableCell>
+                      <EnrichmentStatusBadge status={candidate.enrichmentRequests?.[0]?.status ?? "—"} errorCode={candidate.enrichmentRequests?.[0]?.errorCode} />
                     </TableCell>
                     <TableCell>
                       <CandidateStatusBadge status={candidate.status} />

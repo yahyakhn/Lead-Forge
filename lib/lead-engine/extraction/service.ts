@@ -568,6 +568,7 @@ export interface CandidateFilters {
   minIcpScore?: string
   minOverallScore?: string
   qualification?: string
+  enrichment?: "NOT_ENRICHED" | "RECENTLY_ENRICHED" | "NEEDS_REFRESH" | "FAILED" | "ACTIVE" | "HAS_CONFLICTS"
 }
 
 export async function listCandidates(orgId: string, filters: CandidateFilters = {}) {
@@ -604,6 +605,38 @@ export async function listCandidates(orgId: string, filters: CandidateFilters = 
       { email: { contains: q, mode: "insensitive" } },
       { companyDomain: { contains: q, mode: "insensitive" } },
     ]
+  }
+  if (filters.enrichment) {
+    const { getSettings } = await import("@/lib/lead-engine/enrichment/service")
+    const settings = await getSettings(orgId)
+    const cutoff = new Date(Date.now() - settings.freshnessDays * 24 * 60 * 60 * 1000)
+    const eligible: Prisma.LeadCandidateWhereInput = { OR: [{ companyDomain: { not: null } }, { websiteUrl: { not: null } }] }
+    const succeeded = { status: { in: ["COMPLETED" as const, "PARTIAL" as const] } }
+    const active = { status: { in: ["QUEUED" as const, "RUNNING" as const] } }
+    const conditions: Prisma.LeadCandidateWhereInput[] = []
+    switch (filters.enrichment) {
+      case "NOT_ENRICHED":
+        conditions.push(eligible, { enrichmentRequests: { none: succeeded } })
+        break
+      case "RECENTLY_ENRICHED":
+        conditions.push({ enrichmentRequests: { some: { ...succeeded, completedAt: { gte: cutoff } } } })
+        break
+      case "NEEDS_REFRESH":
+        conditions.push(eligible, { enrichmentRequests: { none: succeeded } }, {
+          enrichmentRequests: { some: { ...succeeded, completedAt: { lt: cutoff } } },
+        })
+        break
+      case "FAILED":
+        conditions.push(eligible, { enrichmentRequests: { some: { status: "FAILED" } } })
+        break
+      case "ACTIVE":
+        conditions.push({ enrichmentRequests: { some: active } })
+        break
+      case "HAS_CONFLICTS":
+        conditions.push({ enrichmentConflicts: { some: { status: "OPEN" } } })
+        break
+    }
+    where.AND = conditions
   }
   const orderBy: Prisma.LeadCandidateOrderByWithRelationInput =
     filters.sort === "oldest"
@@ -646,6 +679,11 @@ export async function listCandidates(orgId: string, filters: CandidateFilters = 
           take: 1,
           orderBy: { scoredAt: "desc" },
           select: { icpScore: true, overallScore: true, qualification: true, scoreStatus: true, modelVersion: true },
+        },
+        enrichmentRequests: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { id: true, status: true, errorCode: true, completedAt: true, createdAt: true },
         },
       },
     }),

@@ -1,4 +1,4 @@
-import { CheerioCrawler, EnqueueStrategy, NonRetryableError, RetryRequestError, log, LogLevel } from "crawlee"
+import { CheerioCrawler, RequestQueue, EnqueueStrategy, NonRetryableError, RetryRequestError, log, LogLevel } from "crawlee"
 import type { CheerioCrawlingContext } from "crawlee"
 import { CRAWL_DEFAULTS, CRAWL_LIMITS, HTML_MAX_BYTES, TEXT_MAX_BYTES, METADATA_MAX_LINKS, METADATA_MAX_HEADINGS, METADATA_MAX_HEADING_LENGTH, isPrivateNetworkAllowed } from "@/lib/lead-engine/crawler/defaults"
 import { ErrorCategory } from "@/lib/lead-engine/error-categories"
@@ -139,9 +139,14 @@ export const crawleeWebCrawler: WebCrawler = {
       .map(normalizeUrl)
       .filter((url): url is string => url !== null && isDomainAllowed(url, config.allowedDomains))
 
+    // Per-run queue so sequential/concurrent crawls never share state
+    // (Crawlee persists its default queue to ./storage across runs).
+    const requestQueue = await RequestQueue.open(`run-${input.runId}`)
+
     try {
       const crawler = new CheerioCrawler(
         {
+          requestQueue,
           requestHandlerTimeoutSecs: Math.ceil(config.requestTimeoutMs / 1000) + 5,
           navigationTimeoutSecs: Math.ceil(config.requestTimeoutMs / 1000),
           maxRequestRetries: CRAWL_DEFAULTS.maxRetries,
@@ -314,6 +319,7 @@ export const crawleeWebCrawler: WebCrawler = {
       }
     } finally {
       activeCrawls.delete(input.runId)
+      await requestQueue.drop()
     }
   },
 }

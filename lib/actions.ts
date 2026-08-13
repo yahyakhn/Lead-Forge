@@ -45,11 +45,20 @@ import {
   deactivateSource,
 } from "@/lib/lead-engine/sources"
 import { createRun, cancelRun, getRawPage } from "@/lib/lead-engine/runs"
-import { enqueueRun, enqueueExtractionRun, enqueueScoringJob } from "@/lib/lead-engine/job-queue"
+import { enqueueRun, enqueueExtractionRun, enqueueScoringJob, enqueueEnrichmentJob } from "@/lib/lead-engine/job-queue"
 import { startExtraction } from "@/lib/lead-engine/extraction/service"
 import { deduplicateRun } from "@/lib/lead-engine/resolution/service"
+import {
+  requestEnrichment,
+  bulkPreview,
+  bulkEnrich,
+  cancelEnrichment,
+  retryEnrichment,
+  resolveConflict,
+  updateSettings,
+} from "@/lib/lead-engine/enrichment/service"
 import { confirmDuplicateGroup, rejectDuplicateGroup } from "@/lib/lead-engine/resolution/groups"
-import { convertCandidate, bulkConvert, bulkPreview, type BulkSummary, type PreviewPlan } from "@/lib/lead-engine/conversion/service"
+import { convertCandidate, bulkConvert, bulkPreview as bulkConvertPreview, type BulkSummary, type PreviewPlan } from "@/lib/lead-engine/conversion/service"
 import {
   scoreCandidate,
   scoreLead,
@@ -305,7 +314,7 @@ export async function convertCandidateAction(candidateId: string): Promise<Actio
 export async function previewBulkAction(candidateIds: string[]): Promise<{ ok: boolean; plan?: PreviewPlan[]; error?: string }> {
   const session = await requireSession()
   try {
-    return { ok: true, plan: await bulkPreview(session.organization.id, candidateIds) }
+    return { ok: true, plan: await bulkConvertPreview(session.organization.id, candidateIds) }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Preview failed" }
   }
@@ -453,5 +462,132 @@ export async function previewScoreAction(input: { leadId?: string; candidateId?:
     return { ok: false, error: "Either leadId or candidateId required" }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Preview failed" }
+  }
+}
+
+// ── TASK 013: enrichment ───────────────────────────────────────────────────
+
+const enrichmentActor = (session: Awaited<ReturnType<typeof requireSession>>) => ({ id: session.user.id, name: session.user.name })
+
+export async function enrichLeadAction(leadId: string, force = false): Promise<ActionResult> {
+  const session = await requireSession()
+  try {
+    const result = await requestEnrichment(session.organization.id, enrichmentActor(session), { leadId, force })
+    if (!result.ok) return { ok: false, error: result.error }
+    enqueueEnrichmentJob(result.id)
+    revalidatePath(`/leads/${leadId}`)
+    return { ok: true, id: result.id }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Enrichment failed" }
+  }
+}
+
+export async function enrichCandidateAction(candidateId: string, force = false): Promise<ActionResult> {
+  const session = await requireSession()
+  try {
+    const result = await requestEnrichment(session.organization.id, enrichmentActor(session), { candidateId, force })
+    if (!result.ok) return { ok: false, error: result.error }
+    enqueueEnrichmentJob(result.id)
+    revalidatePath("/lead-engine/candidates")
+    revalidatePath(`/lead-engine/candidates/${candidateId}`)
+    return { ok: true, id: result.id }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Enrichment failed" }
+  }
+}
+
+export async function bulkPreviewEnrichmentAction(candidateIds: string[]): Promise<{ ok: boolean; preview?: { eligible: number; recentlyEnriched: number; missingWebsite: number; active: number; queued: number }; error?: string }> {
+  const session = await requireSession()
+  try {
+    const preview = await bulkPreview(session.organization.id, candidateIds)
+    return { ok: true, preview }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Preview failed" }
+  }
+}
+
+export async function bulkEnrichCandidatesAction(candidateIds: string[]): Promise<{ ok: boolean; summary?: { queued: number; skippedRecent: number; skippedActive: number; ineligible: number; failed: number }; error?: string }> {
+  const session = await requireSession()
+  try {
+    const summary = await bulkEnrich(session.organization.id, enrichmentActor(session), candidateIds)
+    revalidatePath("/lead-engine/candidates")
+    revalidatePath("/dashboard")
+    return { ok: true, summary }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Bulk enrichment failed" }
+  }
+}
+
+export async function enrichmentJobAction(requestId: string): Promise<{ ok: boolean; request?: { status: string; errorCode: string | null; errorMessage: string | null; fieldsFound: number; fieldsUpdated: number; conflictsCount: number; pagesVisited: number; startedAt: Date | null; completedAt: Date | null }; error?: string }> {
+  const session = await requireSession()
+  try {
+    const request = await prisma.enrichmentRequest.findFirst({ where: { id: requestId, organizationId: session.organization.id } })
+    if (!request) return { ok: false, error: "Request not found" }
+    return {
+      ok: true,
+      request: { status: request.status, errorCode: request.errorCode, errorMessage: request.errorMessage, fieldsFound: request.fieldsFound, fieldsUpdated: request.fieldsUpdated, conflictsCount: request.conflictsCount, pagesVisited: request.pagesVisited, startedAt: request.startedAt, completedAt: request.completedAt },
+    }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Failed to load request" }
+  }
+}
+
+export async function cancelEnrichmentAction(requestId: string): Promise<ActionResult> {
+  const session = await requireSession()
+  try {
+    const result = await cancelEnrichment(session.organization.id, requestId, enrichmentActor(session))
+    if (!result.ok) return { ok: false, error: result.error }
+    revalidatePath("/lead-engine/enrichment")
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Cancel failed" }
+  }
+}
+
+export async function retryEnrichmentAction(requestId: string): Promise<ActionResult> {
+  const session = await requireSession()
+  try {
+    const result = await retryEnrichment(session.organization.id, requestId, enrichmentActor(session))
+    if (!result.ok) return { ok: false, error: result.error }
+    enqueueEnrichmentJob(requestId)
+    revalidatePath("/lead-engine/enrichment")
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Retry failed" }
+  }
+}
+
+export async function resolveConflictAction(conflictId: string, resolution: "KEEP_EXISTING" | "ACCEPT_NEW" | "KEEP_BOTH" | "DISMISSED"): Promise<ActionResult> {
+  const session = await requireSession()
+  try {
+    const result = await resolveConflict(session.organization.id, conflictId, resolution, enrichmentActor(session))
+    if (!result.ok) return { ok: false, error: result.error }
+    revalidatePath("/lead-engine/enrichment")
+    revalidatePath("/lead-engine/candidates")
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Resolution failed" }
+  }
+}
+
+export async function updateEnrichmentSettingsAction(input: {
+  enabled?: boolean
+  maxPagesPerCompany?: number
+  maxDepth?: number
+  requestDelayMs?: number
+  requestTimeoutMs?: number
+  allowedDomains?: string[]
+  enabledProviders?: string[]
+  freshnessDays?: number
+  batchMaxLeads?: number
+}): Promise<ActionResult> {
+  const session = await requireSession()
+  try {
+    await requireAdmin()
+    await updateSettings(session.organization.id, input, enrichmentActor(session))
+    revalidatePath("/settings/enrichment")
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Settings update failed" }
   }
 }

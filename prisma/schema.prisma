@@ -138,8 +138,10 @@ model User {
   createdICPs         ICPProfile[]              @relation("ICPCreator")
   createdSources      LeadSource[]              @relation("LeadSourceCreator")
   convertedCandidates LeadCandidateConversion[] @relation("CandidateConverter")
-  createdAt           DateTime                  @default(now())
-  updatedAt           DateTime                  @updatedAt
+  requestedEnrichments EnrichmentRequest[]       @relation("EnrichmentRequester")
+  resolvedConflicts    EnrichmentConflict[]      @relation("ConflictResolver")
+  createdAt            DateTime                  @default(now())
+  updatedAt            DateTime                  @updatedAt
 }
 
 model Organization {
@@ -170,6 +172,11 @@ model Organization {
   leadScores               LeadScore[]
   leadScoreJobs            LeadScoreJob[]
   scoringAuditEvents       ScoringAuditEvent[]
+  enrichmentSettings       EnrichmentSettings?
+  enrichmentRequests       EnrichmentRequest[]
+  enrichmentResults        EnrichmentResult[]
+  enrichmentConflicts      EnrichmentConflict[]
+  enrichmentAuditEvents    EnrichmentAuditEvent[]
   createdAt                DateTime                  @default(now())
   updatedAt                DateTime                  @updatedAt
 }
@@ -280,6 +287,8 @@ model Lead {
   activities           Activity[]
   deals                Deal[]
   scores               LeadScore[]
+  enrichmentRequests   EnrichmentRequest[]        @relation("LeadEnrichmentRequests")
+  enrichmentConflicts  EnrichmentConflict[]       @relation("LeadEnrichmentConflicts")
   createdAt            DateTime                  @default(now())
   updatedAt            DateTime                  @updatedAt
   lastActivityAt       DateTime?
@@ -628,6 +637,8 @@ model LeadCandidate {
   conversions          LeadCandidateConversion[]
   convertedLeads        Lead[]              @relation("CandidateConversionLead")
   scores               LeadScore[]
+  enrichmentRequests   EnrichmentRequest[]  @relation("CandidateEnrichmentRequests")
+  enrichmentConflicts  EnrichmentConflict[] @relation("CandidateEnrichmentConflicts")
   createdAt            DateTime                  @default(now())
   updatedAt            DateTime                  @updatedAt
 
@@ -918,6 +929,192 @@ model ScoringAuditEvent {
   actorName      String?
   details        Json?
   createdAt      DateTime          @default(now())
+
+  @@index([organizationId, action, createdAt])
+  @@index([organizationId, createdAt])
+}
+
+// ── TASK 013: lead enrichment ─────────────────────────────────────────────
+
+enum EnrichmentRequestStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  PARTIAL
+  FAILED
+  CANCELLED
+}
+
+enum EnrichmentResultStatus {
+  NEW
+  CONFIRMED
+  CONFLICT
+  REJECTED
+  STALE
+}
+
+enum EnrichmentConflictStatus {
+  OPEN
+  RESOLVED
+  DISMISSED
+}
+
+enum ConflictResolution {
+  KEEP_EXISTING
+  ACCEPT_NEW
+  KEEP_BOTH
+  DISMISSED
+}
+
+enum EnrichmentErrorCode {
+  TIMEOUT
+  DNS_ERROR
+  ROBOTS_BLOCKED
+  RATE_LIMITED
+  INVALID_URL
+  PARSER_ERROR
+  PROVIDER_ERROR
+  INSUFFICIENT_DATA
+  CANCELLED
+}
+
+enum EnrichmentAuditAction {
+  ENRICHMENT_REQUESTED
+  ENRICHMENT_STARTED
+  ENRICHMENT_COMPLETED
+  ENRICHMENT_FAILED
+  FIELD_ENRICHED
+  FIELD_CONFLICT_CREATED
+  FIELD_CONFLICT_RESOLVED
+  ENRICHMENT_FORCE_REFRESHED
+  ENRICHMENT_CANCELLED
+  ENRICHMENT_RETRIED
+}
+
+// Organization-level enrichment policy. Sensible safe defaults; crawler
+// limits deliberately conservative — normal users cannot raise them.
+model EnrichmentSettings {
+  id                 String       @id @default(cuid())
+  organizationId     String       @unique
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  enabled            Boolean      @default(true)
+  maxPagesPerCompany Int          @default(5)
+  maxDepth           Int          @default(1)
+  requestDelayMs     Int          @default(1000)
+  requestTimeoutMs   Int          @default(15000)
+  allowedDomains     Json?
+  enabledProviders   Json?
+  freshnessDays      Int          @default(7)
+  batchMaxLeads      Int          @default(100)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+}
+
+// One enrichment job per (lead|candidate, provider) request.
+model EnrichmentRequest {
+  id             String                   @id @default(cuid())
+  organizationId String
+  organization   Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  leadId         String?
+  lead           Lead?                    @relation("LeadEnrichmentRequests", fields: [leadId], references: [id], onDelete: Cascade)
+  candidateId    String?
+  candidate      LeadCandidate?           @relation("CandidateEnrichmentRequests", fields: [candidateId], references: [id], onDelete: Cascade)
+  providerId     String
+  status         EnrichmentRequestStatus  @default(QUEUED)
+  forceRefresh   Boolean                  @default(false)
+  retries        Int                      @default(0)
+  requestedById  String?
+  requestedBy    User?                    @relation("EnrichmentRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  requestedAt    DateTime                 @default(now())
+  startedAt      DateTime?
+  completedAt    DateTime?
+  errorCode      EnrichmentErrorCode?
+  errorMessage   String?
+  pagesVisited   Int                      @default(0)
+  fieldsFound    Int                      @default(0)
+  fieldsUpdated  Int                      @default(0)
+  conflictsCount Int                      @default(0)
+  results        EnrichmentResult[]
+  conflicts      EnrichmentConflict[]
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  @@index([organizationId, status])
+  @@index([organizationId, leadId, createdAt])
+  @@index([organizationId, candidateId, createdAt])
+  @@index([organizationId, providerId, createdAt])
+  @@index([organizationId, createdAt])
+}
+
+// One row per enriched field — independently traceable (§10-§11).
+model EnrichmentResult {
+  id              String                 @id @default(cuid())
+  organizationId  String
+  organization    Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  requestId       String
+  request         EnrichmentRequest      @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  leadId          String?
+  candidateId     String?
+  field           String
+  value           String
+  normalizedValue String?
+  source          String
+  sourceUrl       String?
+  evidence        String?
+  method          String
+  confidence      Float
+  status          EnrichmentResultStatus @default(NEW)
+  observedAt      DateTime               @default(now())
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  @@index([organizationId, requestId])
+  @@index([organizationId, leadId, field])
+  @@index([organizationId, candidateId, field])
+  @@index([organizationId, field])
+}
+
+// A conflicting pair: existing vs enriched. Resolved by a user; the
+// canonical entity value is only ever changed via resolution.
+model EnrichmentConflict {
+  id              String                  @id @default(cuid())
+  organizationId  String
+  organization    Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  requestId       String
+  request         EnrichmentRequest       @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  leadId          String?
+  lead            Lead?                   @relation("LeadEnrichmentConflicts", fields: [leadId], references: [id], onDelete: Cascade)
+  candidateId     String?
+  candidate       LeadCandidate?          @relation("CandidateEnrichmentConflicts", fields: [candidateId], references: [id], onDelete: Cascade)
+  field           String
+  existingValue   String
+  enrichedValue   String
+  existingSource  String
+  enrichedSource  String
+  confidence      Float
+  status          EnrichmentConflictStatus @default(OPEN)
+  resolution      ConflictResolution?
+  resolvedById    String?
+  resolvedBy      User?                   @relation("ConflictResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  resolvedAt      DateTime?
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  @@index([organizationId, status])
+  @@index([organizationId, leadId, status])
+  @@index([organizationId, candidateId, status])
+}
+
+// TASK 013 audit trail: request lifecycle + field/conflict events.
+model EnrichmentAuditEvent {
+  id             String                @id @default(cuid())
+  organizationId String
+  organization   Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  action         EnrichmentAuditAction
+  actorUserId    String?
+  actorName      String?
+  details        Json?
+  createdAt      DateTime              @default(now())
 
   @@index([organizationId, action, createdAt])
   @@index([organizationId, createdAt])
