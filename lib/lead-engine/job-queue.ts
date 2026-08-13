@@ -1,4 +1,5 @@
 import { executeRun } from "@/lib/lead-engine/worker"
+import { prisma } from "@/lib/db"
 import { runExtractionJob } from "@/lib/lead-engine/extraction/service"
 import { runScoringJob } from "@/lib/lead-engine/scoring/service"
 import { runEnrichmentJob } from "@/lib/lead-engine/enrichment/service"
@@ -7,6 +8,7 @@ import {
   runEmailVerificationBatch,
   runEmailVerificationJob,
 } from "@/lib/lead-engine/email/service"
+import { processOutboxMessage } from "@/lib/lead-engine/outreach/service"
 
 // In-process development queue. Runs are executed shortly after enqueue in
 // this process; cancellation is honored because the worker re-checks the
@@ -79,6 +81,17 @@ export function enqueueEmailVerificationBatch(batchId: string): void {
       await runEmailVerificationBatch(batchId)
     } catch (e) {
       console.log(`email.verification.batch.error batchId=${batchId} error=${e instanceof Error ? e.message : "unknown"}`)
+    }
+  })
+}
+
+export function enqueueOutboxMessage(communicationId: string): void {
+  setImmediate(async () => {
+    try {
+      const message = await prisma.outboxMessage.findUnique({ where: { communicationId } })
+      if (message && message.status === "PENDING") await processOutboxMessage(message.id)
+    } catch (e) {
+      console.log(`outbox.queue.error communicationId=${communicationId} error=${e instanceof Error ? e.message : "unknown"}`)
     }
   })
 }

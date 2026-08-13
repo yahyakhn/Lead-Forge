@@ -36,6 +36,18 @@ export const DEFAULT_SETTINGS = {
   batchMaxEmails: Number(process.env.MAX_VERIFICATION_BATCH ?? 200),
   discoveryRateLimit: Number(process.env.DISCOVERY_RATE_LIMIT ?? 60),
   verificationRateLimit: Number(process.env.VERIFICATION_RATE_LIMIT ?? 120),
+  sendingEnabled: process.env.EMAIL_PROVIDER_MODE === "development" ? true : false,
+  dailySendLimit: 100,
+  hourlySendLimit: 30,
+  minDaysBetweenOutreach: 3,
+  allowSendToUnverified: false,
+}
+
+// Sent-enablement default must be evaluated at call time: the dev mode is a
+// runtime property (env may be set after module load, e.g. in tests).
+function defaultSendingEnabled(): boolean {
+  const mode = process.env.EMAIL_PROVIDER_MODE ?? (process.env.NODE_ENV === "production" ? "production" : "development")
+  return mode === "development"
 }
 
 const MAX_RETRIES = 2
@@ -93,7 +105,14 @@ export async function getSettings(orgId: string): Promise<EmailSettings> {
   const existing = await prisma.emailSettings.findUnique({ where: { organizationId: orgId } })
   if (existing) return existing
   return prisma.emailSettings.create({
-    data: { organizationId: orgId },
+    data: {
+      organizationId: orgId,
+      sendingEnabled: defaultSendingEnabled(),
+      dailySendLimit: DEFAULT_SETTINGS.dailySendLimit,
+      hourlySendLimit: DEFAULT_SETTINGS.hourlySendLimit,
+      minDaysBetweenOutreach: DEFAULT_SETTINGS.minDaysBetweenOutreach,
+      allowSendToUnverified: DEFAULT_SETTINGS.allowSendToUnverified,
+    },
   })
 }
 
@@ -114,6 +133,15 @@ export async function updateSettings(
     rolePrefixes?: string[]
     disposableDomains?: string[]
     enabledProviders?: string[]
+    sendingEnabled?: boolean
+    dailySendLimit?: number
+    hourlySendLimit?: number
+    minDaysBetweenOutreach?: number
+    allowSendToUnverified?: boolean
+    senderName?: string | null
+    senderEmail?: string | null
+    replyTo?: string | null
+    signature?: string | null
   },
   actor?: { id: string; name: string } | null,
 ) {
@@ -133,6 +161,15 @@ export async function updateSettings(
       ...(input.rolePrefixes !== undefined ? { rolePrefixes: input.rolePrefixes as unknown as object } : {}),
       ...(input.disposableDomains !== undefined ? { disposableDomains: input.disposableDomains as unknown as object } : {}),
       ...(input.enabledProviders !== undefined ? { enabledProviders: input.enabledProviders as unknown as object } : {}),
+      ...(input.sendingEnabled !== undefined ? { sendingEnabled: input.sendingEnabled } : {}),
+      ...(input.dailySendLimit !== undefined ? { dailySendLimit: clamp(input.dailySendLimit, 1, 100000) } : {}),
+      ...(input.hourlySendLimit !== undefined ? { hourlySendLimit: clamp(input.hourlySendLimit, 1, 10000) } : {}),
+      ...(input.minDaysBetweenOutreach !== undefined ? { minDaysBetweenOutreach: clamp(input.minDaysBetweenOutreach, 0, 365) } : {}),
+      ...(input.allowSendToUnverified !== undefined ? { allowSendToUnverified: input.allowSendToUnverified } : {}),
+      ...(input.senderName !== undefined ? { senderName: input.senderName?.trim() || null } : {}),
+      ...(input.senderEmail !== undefined ? { senderEmail: input.senderEmail?.trim() || null } : {}),
+      ...(input.replyTo !== undefined ? { replyTo: input.replyTo?.trim() || null } : {}),
+      ...(input.signature !== undefined ? { signature: input.signature?.trim() || null } : {}),
     },
   })
   await audit(orgId, EmailAuditAction.EMAIL_SETTINGS_UPDATED, actor ?? null, undefined, { settings: true })

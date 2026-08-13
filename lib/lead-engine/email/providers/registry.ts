@@ -34,6 +34,12 @@ class EmailProviderRegistry {
     return provider as EmailProvider & { verify: NonNullable<EmailProvider["verify"]> }
   }
 
+  sending(id: string) {
+    const provider = this.providers.get(id)
+    if (!provider || !provider.capabilities.includes("SENDING") || !provider.send) return undefined
+    return provider as EmailProvider & { send: NonNullable<EmailProvider["send"]> }
+  }
+
   hasCapability(id: string, capability: EmailProviderCapability): boolean {
     return this.providers.get(id)?.capabilities.includes(capability) ?? false
   }
@@ -49,8 +55,12 @@ export function registerEmailProvider(provider: EmailProvider): void {
 // empty regardless of import order (tests, server, CLI).
 import { internalDiscoveryProvider } from "@/lib/lead-engine/email/providers/internal-discovery"
 import { internalVerificationProvider } from "@/lib/lead-engine/email/providers/internal-verification"
+import { devMailProvider } from "@/lib/lead-engine/email/providers/dev-mail"
+import { smtpMailProvider } from "@/lib/lead-engine/email/providers/smtp-mail"
 registerEmailProvider(internalDiscoveryProvider)
 registerEmailProvider(internalVerificationProvider)
+registerEmailProvider(devMailProvider)
+registerEmailProvider(smtpMailProvider)
 
 export const INTERNAL_DISCOVERY_PROVIDER_ID = internalDiscoveryProvider.id
 export const INTERNAL_VERIFICATION_PROVIDER_ID = internalVerificationProvider.id

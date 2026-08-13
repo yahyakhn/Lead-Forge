@@ -144,6 +144,8 @@ model User {
   emailDiscoveryJobs   EmailDiscoveryJob[]       @relation("EmailDiscoveryRequester")
   emailVerificationBatches EmailVerificationBatch[] @relation("EmailVerificationRequester")
   resolvedEmailConflicts EmailConflict[]         @relation("EmailConflictResolver")
+  emailTemplateCreated EmailTemplate[]           @relation("EmailTemplateCreator")
+  communicationsCreated Communication[]          @relation("CommunicationCreator")
   createdAt            DateTime                  @default(now())
   updatedAt            DateTime                  @updatedAt
 }
@@ -189,6 +191,11 @@ model Organization {
   emailVerificationJobs    EmailVerificationJob[]
   emailVerificationBatches EmailVerificationBatch[]
   leadReadinesses          LeadReadiness[]
+  emailAccounts            EmailAccount[]
+  emailTemplates           EmailTemplate[]
+  communications           Communication[]
+  outboxMessages           OutboxMessage[]
+  emailWebhookEvents       EmailWebhookEvent[]
   createdAt                DateTime                  @default(now())
   updatedAt                DateTime                  @updatedAt
 }
@@ -262,10 +269,12 @@ model Contact {
   sourceCandidateId    String?
   confidence           Float?
   verificationStatus   ContactVerificationStatus @default(UNKNOWN)
+  doNotContact         Boolean                   @default(false)
   leads                Lead[]
   candidateConversions LeadCandidateConversion[]
   activities           Activity[]
   emailAddresses       EmailAddress[]
+  communications       Communication[]
   createdAt            DateTime                  @default(now())
   updatedAt            DateTime                  @updatedAt
 
@@ -308,6 +317,11 @@ model Lead {
   leadReadinesses      LeadReadiness[]
   contactReadiness     Int?
   emailStatus          EmailStatus?
+  doNotContact         Boolean                   @default(false)
+  outreachStatus       OutreachStatus            @default(NOT_CONTACTED)
+  nextAction           String?
+  nextActionAt         DateTime?
+  communications       Communication[]
   createdAt            DateTime                  @default(now())
   updatedAt            DateTime                  @updatedAt
   lastActivityAt       DateTime?
@@ -1164,6 +1178,8 @@ enum EmailStatus {
   STALE
   CONFLICT
   REJECTED
+  DO_NOT_CONTACT
+  UNSUBSCRIBED
 }
 
 enum EmailSourceType {
@@ -1233,6 +1249,18 @@ enum EmailAuditAction {
   EMAIL_REMOVED
   EMAIL_ACCEPTED
   EMAIL_SETTINGS_UPDATED
+  EMAIL_DRAFT_SAVED
+  EMAIL_SENT
+  EMAIL_SEND_FAILED
+  EMAIL_DELIVERED
+  EMAIL_BOUNCED
+  EMAIL_UNSUBSCRIBED
+  EMAIL_TEMPLATE_USED
+  EMAIL_ACCOUNT_CHANGED
+  EMAIL_REPLY_RECEIVED
+  EMAIL_OPENED
+  EMAIL_CLICKED
+  EMAIL_WEBHOOK_RECEIVED
 }
 
 // Organization-level email policy. Defaults read from env; admins may tune.
@@ -1252,6 +1280,16 @@ model EmailSettings {
   rolePrefixes           Json?
   disposableDomains      Json?
   enabledProviders       Json?
+  sendingEnabled         Boolean      @default(false)
+  dailySendLimit         Int          @default(100)
+  hourlySendLimit        Int          @default(30)
+  minDaysBetweenOutreach Int          @default(3)
+  allowSendToUnverified  Boolean      @default(false)
+  senderName             String?
+  senderEmail            String?
+  replyTo                String?
+  signature              String?
+  defaultAccountId       String?
   createdAt              DateTime     @default(now())
   updatedAt              DateTime     @updatedAt
 }
@@ -1290,8 +1328,9 @@ model EmailAddress {
 events               EmailEvent[]
   conflicts            EmailConflict[]
   verificationJobs     EmailVerificationJob[]
-  createdAt            DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
+  communications      Communication[]
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
 
   @@unique([organizationId, normalizedEmail, leadId, candidateId, companyId, contactId])
   @@index([organizationId, leadId])
@@ -1446,4 +1485,211 @@ model LeadReadiness {
 
   @@index([organizationId, leadId, calculatedAt])
   @@index([organizationId, candidateId, calculatedAt])
+}
+
+// ── TASK 015: sales outreach & communication ──────────────────────────────
+
+enum OutreachStatus {
+  NOT_CONTACTED
+  CONTACTED
+  REPLIED
+  MEETING_BOOKED
+  QUALIFIED
+  DISQUALIFIED
+  NURTURE
+  DO_NOT_CONTACT
+}
+
+enum CommunicationChannel {
+  EMAIL
+  CALL
+  NOTE
+}
+
+enum CommunicationDirection {
+  OUTBOUND
+  INBOUND
+  INTERNAL
+}
+
+// DELIVERED is only claimed when the provider supplies delivery evidence.
+enum CommunicationStatus {
+  DRAFT
+  QUEUED
+  SENDING
+  SENT
+  DELIVERED
+  BOUNCED
+  TEMPORARY_FAILURE
+  FAILED
+  CANCELLED
+}
+
+enum CallOutcome {
+  CONNECTED
+  NO_ANSWER
+  VOICEMAIL
+  WRONG_NUMBER
+  FOLLOW_UP_REQUIRED
+}
+
+enum EmailTemplateCategory {
+  INTRODUCTION
+  FOLLOW_UP
+  DEMO
+  PARTNERSHIP
+  GENERAL
+}
+
+enum EmailTemplateStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum EmailAccountStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum OutboxStatus {
+  PENDING
+  SENDING
+  SENT
+  FAILED
+  CANCELLED
+}
+
+// Normalized send errors (provider + pre-send safety). Never surface raw
+// provider secrets/errors to users (§67).
+enum EmailSendErrorCode {
+  AUTH_FAILED
+  RATE_LIMITED
+  INVALID_RECIPIENT
+  PROVIDER_UNAVAILABLE
+  MESSAGE_REJECTED
+  NOT_CONFIGURED
+  DO_NOT_CONTACT
+  UNSUBSCRIBED
+  COOLDOWN
+  LIMIT_REACHED
+  UNKNOWN
+}
+
+// Sending identity. Provider secrets are never stored in the DB — they are
+// resolved from environment configuration at send time (§18, §19).
+model EmailAccount {
+  id             String            @id @default(cuid())
+  organizationId String
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  provider       String            @default("smtp")
+  name           String
+  email          String
+  status         EmailAccountStatus @default(ACTIVE)
+  isDefault      Boolean           @default(false)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@unique([organizationId, email])
+  @@index([organizationId, status])
+}
+
+// Reusable outreach templates (§31-§37). Archived, never hard-deleted.
+model EmailTemplate {
+  id             String               @id @default(cuid())
+  organizationId String
+  organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  description    String?
+  category       EmailTemplateCategory @default(GENERAL)
+  subject        String
+  body           String
+  status         EmailTemplateStatus  @default(ACTIVE)
+  createdById    String?
+  createdBy      User?                @relation("EmailTemplateCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  @@unique([organizationId, name])
+  @@index([organizationId, status, category, updatedAt])
+}
+
+// One message/event in the lead's communication history. Threading-ready via
+// threadId/inReplyToId; append-only records (drafts share the table via
+// status = DRAFT). Communication row is the source of truth; an Activity row
+// mirrors it for the generic timeline component.
+model Communication {
+  id                String                 @id @default(cuid())
+  organizationId    String
+  organization      Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  leadId            String?
+  lead              Lead?                  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  contactId         String?
+  contact           Contact?               @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  emailId           String?
+  email             EmailAddress?          @relation(fields: [emailId], references: [id], onDelete: SetNull)
+  threadId          String?
+  inReplyToId       String?
+  channel           CommunicationChannel   @default(EMAIL)
+  direction         CommunicationDirection @default(OUTBOUND)
+  status            CommunicationStatus    @default(DRAFT)
+  subject           String?
+  body              String?
+  cc                String?
+  bcc               String?
+  provider          String?
+  providerMessageId String?
+  sentAt            DateTime?
+  deliveredAt       DateTime?
+  openedAt          DateTime?
+  clickedAt         DateTime?
+  idempotencyKey    String?
+  metadata          Json?
+  createdById       String?
+  createdBy         User?                  @relation("CommunicationCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  outboxMessage     OutboxMessage?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, leadId, createdAt])
+  @@index([organizationId, createdById, createdAt])
+  @@index([organizationId, channel, createdAt])
+  @@index([organizationId, status, createdAt])
+}
+
+// Queue-backed sending (§69). One row per send attempt of a Communication.
+model OutboxMessage {
+  id              String       @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  communicationId String       @unique
+  communication   Communication @relation(fields: [communicationId], references: [id], onDelete: Cascade)
+  status          OutboxStatus @default(PENDING)
+  attempts        Int          @default(0)
+  errorCode       String?
+  lastError       String?
+  scheduledFor    DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([organizationId, status, createdAt])
+}
+
+// Idempotent inbound provider events (delivered/bounced/failed/opened/
+// clicked/complaint/unsubscribe). providerEventId is unique per org so a
+// duplicate webhook is never processed twice (§58).
+model EmailWebhookEvent {
+  id              String   @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  providerEventId String
+  provider        String
+  eventType       String
+  subjectId       String?
+  payload         Json
+  processedAt     DateTime?
+  createdAt       DateTime @default(now())
+
+  @@unique([organizationId, providerEventId])
+  @@index([organizationId, provider, createdAt])
 }

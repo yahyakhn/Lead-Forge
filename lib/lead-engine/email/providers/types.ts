@@ -3,7 +3,7 @@
 
 import type { EmailSourceType } from "@/generated/prisma/enums"
 
-export type EmailProviderCapability = "DISCOVERY" | "VERIFICATION"
+export type EmailProviderCapability = "DISCOVERY" | "VERIFICATION" | "SENDING"
 
 export interface EmailProviderDescriptor {
   id: string
@@ -75,10 +75,51 @@ export interface EmailVerificationProvider {
   verify(email: string, options?: Record<string, unknown>): Promise<EmailVerificationResult>
 }
 
+// ── sending (TASK 015 §13) ────────────────────────────────────────────────
+
+export interface EmailOutboundMessage {
+  to: string
+  cc?: string
+  bcc?: string
+  subject: string
+  body: string
+  from?: string
+  replyTo?: string
+}
+
+export interface EmailSendResult {
+  ok: boolean
+  providerMessageId?: string
+  errorCode?: string
+  errorMessage?: string
+}
+
+// Normalized inbound provider event. Event types map 1:1 to
+// EmailWebhookEvent.eventType and are only processed when the provider
+// actually supports them (§56).
+export interface EmailProviderEvent {
+  providerEventId: string
+  eventType: "delivered" | "bounced" | "failed" | "opened" | "clicked" | "complaint" | "unsubscribe" | "reply"
+  subjectId?: string
+  email?: string
+  subject?: string
+  body?: string
+  bounceType?: "hard" | "soft"
+}
+
+export interface EmailSendingProvider {
+  id: string
+  name: string
+  capabilities: EmailProviderCapability[]
+  send(message: EmailOutboundMessage): Promise<EmailSendResult>
+  parseWebhook?(payload: unknown): EmailProviderEvent[]
+}
+
 export interface EmailProvider
   extends EmailProviderDescriptor,
     Partial<EmailDiscoveryProvider>,
-    Partial<EmailVerificationProvider> {
+    Partial<EmailVerificationProvider>,
+    Partial<EmailSendingProvider> {
   id: string
   name: string
   capabilities: EmailProviderCapability[]
