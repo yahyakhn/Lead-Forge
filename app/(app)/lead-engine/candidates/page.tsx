@@ -7,11 +7,13 @@ import { ErrorState, EmptyState } from "@/components/crm/states"
 import { Pagination } from "@/components/crm/pagination"
 import { CandidateStatusBadge, ExtractionMethodBadge } from "@/components/crm/lead-engine/candidate-badges"
 import { ConvertSelectedBar } from "@/components/crm/lead-engine/convert-selected-bar"
+import { ScoreSelectedBar } from "@/components/crm/lead-engine/score-selected-bar"
 import { isConvertibleStatus } from "@/lib/lead-engine/conversion/service"
 import { formatDateTime } from "@/lib/format"
 import { CandidateStatus, ExtractionMethod } from "@/generated/prisma/enums"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScanSearchIcon } from "lucide-react"
+import { ScoreBadge } from "@/components/crm/badges"
 
 type SearchParams = Record<string, string | string[] | undefined>
 
@@ -27,6 +29,7 @@ const selectOptions = (values: readonly string[]) => (
 )
 
 const enumOptions = (enumObject: Record<string, string>) => selectOptions(Object.values(enumObject))
+const qualificationOptions = selectOptions(["HOT", "GOOD", "MAYBE", "LOW", "UNQUALIFIED"])
 
 export default async function CandidatesPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const session = await requireSession()
@@ -36,8 +39,8 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
   let candidates
   try {
     candidates = await listCandidates(session.organization.id, {
-      page: sp.page,
-      pageSize: sp.pageSize,
+      page: typeof sp.page === "string" ? sp.page : undefined,
+      pageSize: typeof sp.pageSize === "string" ? sp.pageSize : undefined,
       method: first("method"),
       status: first("status"),
       sourceId: first("source"),
@@ -50,6 +53,9 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
       minQuality: first("minQuality"),
       sort: first("sort"),
       q: first("q"),
+      minIcpScore: first("minIcpScore"),
+      minOverallScore: first("minOverallScore"),
+      qualification: first("qualification"),
     })
   } catch {
     return <ErrorState message="We couldn't load lead candidates." />
@@ -140,6 +146,22 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
             <option value="quality">Quality</option>
             <option value="company">Company</option>
             <option value="confidence">Confidence</option>
+            <option value="icpScore">ICP Score</option>
+            <option value="overallScore">Overall Score</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Min ICP Score
+          <input type="number" name="minIcpScore" min={0} max={100} defaultValue={first("minIcpScore") ?? ""} placeholder="0-100" className="h-9 w-24 rounded-md border bg-background px-3 text-sm" />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Min Overall Score
+          <input type="number" name="minOverallScore" min={0} max={100} defaultValue={first("minOverallScore") ?? ""} placeholder="0-100" className="h-9 w-24 rounded-md border bg-background px-3 text-sm" />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Qualification
+          <select name="qualification" defaultValue={first("qualification") ?? ""} className="h-9 rounded-md border bg-background px-3 text-sm">
+            {qualificationOptions}
           </select>
         </label>
         <button type="submit" className="h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground">
@@ -147,7 +169,7 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
         </button>
       </form>
 
-      <div className="mb-4">
+      <div className="mb-4 space-y-4">
         <ConvertSelectedBar
           candidates={candidates.data
             .filter((c) => isConvertibleStatus(c.status))
@@ -156,6 +178,12 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
               label: c.companyName ?? c.contactFullName ?? c.id.slice(-6),
               eligible: true,
             }))}
+        />
+        <ScoreSelectedBar
+          candidates={candidates.data.map((c) => ({
+            id: c.id,
+            label: c.companyName ?? c.contactFullName ?? c.id.slice(-6),
+          }))}
         />
       </div>
 
@@ -170,6 +198,9 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
               <TableHead>Domain</TableHead>
               <TableHead>Method</TableHead>
               <TableHead>Quality</TableHead>
+              <TableHead className="text-right">ICP Score</TableHead>
+              <TableHead className="text-right">Overall</TableHead>
+              <TableHead>Qualification</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Created</TableHead>
             </TableRow>
@@ -177,7 +208,7 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
           <TableBody>
             {candidates.data.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9}>
+                <TableCell colSpan={12}>
                   <EmptyState
                     title="No candidates yet"
                     description="Run a scraper and then start extraction on the run page to generate lead candidates."
@@ -190,46 +221,76 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
                 </TableCell>
               </TableRow>
             ) : (
-              candidates.data.map((candidate) => (
-                <TableRow key={candidate.id} className="cursor-pointer hover:bg-muted/50">
-                  <TableCell>
-                    <Link href={`/lead-engine/candidates/${candidate.id}`} className="font-medium underline-offset-4 hover:underline">
-                      {candidate.companyName ?? "—"}
-                    </Link>
-                    {candidate.pageClassification ? (
-                      <span className="ml-2 text-xs text-muted-foreground">{candidate.pageClassification.toLowerCase()}</span>
-                    ) : null}
-                  </TableCell>
-                  <TableCell>{candidate.contactFullName ?? "—"}</TableCell>
-                  <TableCell>{candidate.contactJobTitle ?? "—"}</TableCell>
-                  <TableCell>{candidate.email ?? "—"}</TableCell>
-                  <TableCell>{candidate.companyDomain ?? "—"}</TableCell>
-                  <TableCell>
-                    <ExtractionMethodBadge method={candidate.extractionMethod} />
-                  </TableCell>
-                  <TableCell>
-                    {candidate.dataQualityScore !== null ? (
-                      <span
-                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium tabular-nums ${
-                          candidate.dataQualityScore >= 70
-                            ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                            : candidate.dataQualityScore >= 40
-                              ? "bg-amber-500/10 text-amber-700 dark:text-amber-400"
-                              : "bg-destructive/10 text-destructive"
-                        }`}
-                      >
-                        {candidate.dataQualityScore}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <CandidateStatusBadge status={candidate.status} />
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatDateTime(candidate.createdAt)}</TableCell>
-                </TableRow>
-              ))
+              candidates.data.map((candidate) => {
+                const score = candidate.scores?.[0]
+                return (
+                  <TableRow key={candidate.id} className="cursor-pointer hover:bg-muted/50">
+                    <TableCell>
+                      <Link href={`/lead-engine/candidates/${candidate.id}`} className="font-medium underline-offset-4 hover:underline">
+                        {candidate.companyName ?? "—"}
+                      </Link>
+                      {candidate.pageClassification ? (
+                        <span className="ml-2 text-xs text-muted-foreground">{candidate.pageClassification.toLowerCase()}</span>
+                      ) : null}
+                    </TableCell>
+                    <TableCell>{candidate.contactFullName ?? "—"}</TableCell>
+                    <TableCell>{candidate.contactJobTitle ?? "—"}</TableCell>
+                    <TableCell>{candidate.email ?? "—"}</TableCell>
+                    <TableCell>{candidate.companyDomain ?? "—"}</TableCell>
+                    <TableCell>
+                      <ExtractionMethodBadge method={candidate.extractionMethod} />
+                    </TableCell>
+                    <TableCell>
+                      {candidate.dataQualityScore !== null ? (
+                        <span
+                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium tabular-nums ${
+                            candidate.dataQualityScore >= 70
+                              ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                              : candidate.dataQualityScore >= 40
+                                ? "bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                                : "bg-destructive/10 text-destructive"
+                          }`}
+                        >
+                          {candidate.dataQualityScore}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {score ? <ScoreBadge score={score.icpScore} /> : <span className="text-muted-foreground">—</span>}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {score ? <ScoreBadge score={score.overallScore} /> : <span className="text-muted-foreground">—</span>}
+                    </TableCell>
+                    <TableCell>
+                      {score ? (
+                        <span
+                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                            score.qualification === "HOT"
+                              ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40"
+                              : score.qualification === "GOOD"
+                                ? "bg-green-100 text-green-800 dark:bg-green-900/40"
+                                : score.qualification === "MAYBE"
+                                  ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40"
+                                  : score.qualification === "LOW"
+                                    ? "bg-red-100 text-red-800 dark:bg-red-900/40"
+                                    : "bg-slate-100 text-slate-800 dark:bg-slate-900/40"
+                          }`}
+                        >
+                          {score.qualification}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Not scored</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <CandidateStatusBadge status={candidate.status} />
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatDateTime(candidate.createdAt)}</TableCell>
+                  </TableRow>
+                )
+              })
             )}
           </TableBody>
         </Table>

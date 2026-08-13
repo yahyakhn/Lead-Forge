@@ -13,6 +13,7 @@ import {
 } from "@/generated/prisma/enums"
 import { parsePagination } from "@/lib/crm/pagination"
 import { sourceQuality } from "@/lib/lead-engine/resolution/quality"
+import { scoreCandidate } from "@/lib/lead-engine/scoring/service"
 
 export const { PENDING_REVIEW, CONFIRMED, REJECTED, AUTO_MERGED } = DuplicateGroupStatus
 
@@ -209,7 +210,12 @@ export async function createResolutionGroup(
   })
 
   if (status === AUTO_MERGED) {
-    await finalizeGroup(orgId, group.id, AUTO_MERGED)
+    const finalized = await finalizeGroup(orgId, group.id, AUTO_MERGED)
+    // TASK 012 §20: auto-merged canonical candidates are READY — score them.
+    const ready = finalized?.members?.find((m) => m.candidate.status === CandidateStatus.READY)
+    if (ready?.candidateId) {
+      await scoreCandidate(orgId, ready.candidateId, { actor: null }).catch(() => null)
+    }
   }
 
   return getDuplicateGroup(orgId, group.id)
@@ -332,6 +338,11 @@ const CANDIDATE_MERGE_SELECT = {
 
 export async function confirmDuplicateGroup(orgId: string, groupId: string, actor: { id?: string; name?: string }) {
   const result = await finalizeGroup(orgId, groupId, CONFIRMED, actor)
+  // TASK 012 §20: the canonical candidate is now READY — score it.
+  const ready = result?.members?.find((m) => m.candidate.status === CandidateStatus.READY)
+  if (ready?.candidateId) {
+    await scoreCandidate(orgId, ready.candidateId, { actor: actor?.id ? { id: actor.id, name: actor.name ?? "" } : null }).catch(() => null)
+  }
   return { ok: true as const, group: result }
 }
 
@@ -423,7 +434,7 @@ export interface DuplicateGroupFilters {
 
 export async function listDuplicateGroups(orgId: string, filters: DuplicateGroupFilters = {}) {
   const { page, pageSize } = parsePagination(filters)
-  const where: Prisma.DuplicateGroupWhereInput = { { organizationId: orgId } }
+  const where: Prisma.DuplicateGroupWhereInput = { organizationId: orgId }
   if (filters.status) where.status = filters.status as DuplicateGroupStatus
   if (filters.entityType) where.entityType = filters.entityType as EntityType
   const [total, data] = await Promise.all([
@@ -434,7 +445,7 @@ export async function listDuplicateGroups(orgId: string, filters: DuplicateGroup
 }
 
 export async function getDuplicateGroup(orgId: string, id: string) {
-  return prisma.duplicateGroup.findFirst({ where: { id, { organizationId: orgId } }, include: GROUP_INCLUDE })
+  return prisma.duplicateGroup.findFirst({ where: { id, organizationId: orgId }, include: GROUP_INCLUDE })
 }
 
 // ── Observability stats for the review dashboard (§73-§74) ────────────────

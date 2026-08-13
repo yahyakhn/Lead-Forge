@@ -82,13 +82,24 @@ export default async function LeadsPage({
             { value: "40", label: "40+" },
           ]}
         />
+        <FilterSelect
+          param="qualification"
+          placeholder="Qualification"
+          options={[
+            { value: "HOT", label: "HOT" },
+            { value: "GOOD", label: "GOOD" },
+            { value: "MAYBE", label: "MAYBE" },
+            { value: "LOW", label: "LOW" },
+            { value: "UNQUALIFIED", label: "UNQUALIFIED" },
+          ]}
+        />
       </div>
 
       {result.data.length === 0 ? (
         <EmptyState
-          title={sp.search || sp.status || sp.priority || sp.owner || minScore || sp.source ? "No leads match your filters" : "No leads yet"}
+          title={sp.search || sp.status || sp.priority || sp.owner || minScore || sp.source || sp.qualification ? "No leads match your filters" : "No leads yet"}
           description={
-            sp.search || sp.status || sp.priority || sp.owner || minScore
+            sp.search || sp.status || sp.priority || sp.owner || minScore || sp.qualification
               ? "Try adjusting your search or filters."
               : "Once you start importing or discovering prospects, they will appear here."
           }
@@ -100,7 +111,9 @@ export default async function LeadsPage({
               <TableRow className="hover:bg-transparent">
                 <TableHead>Company</TableHead>
                 <TableHead>Contact</TableHead>
-                <TableHead className="text-right">Score</TableHead>
+                <TableHead className="text-right">ICP Score</TableHead>
+                <TableHead className="text-right">Overall</TableHead>
+                <TableHead>Qualification</TableHead>
                 <TableHead>Priority</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Owner</TableHead>
@@ -109,33 +122,60 @@ export default async function LeadsPage({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {result.data.map((lead) => (
-                <TableRow key={lead.id} className="hover:bg-muted/50">
-                  <TableCell>
-                    <Link href={`/leads/${lead.id}`} className="block font-medium hover:underline">
-                      {lead.company?.name ?? "—"}
-                    </Link>
-                    {lead.company?.domain ? (
-                      <span className="block text-xs text-muted-foreground">{lead.company.domain}</span>
-                    ) : null}
-                  </TableCell>
-                  <TableCell>{lead.contact?.fullName ?? "—"}</TableCell>
-                  <TableCell className="text-right">
-                    <ScoreBadge score={lead.score} />
-                  </TableCell>
-                  <TableCell>
-                    <PriorityBadge priority={lead.priority} />
-                  </TableCell>
-                  <TableCell>
-                    <StatusBadge status={lead.status} />
-                  </TableCell>
-                  <TableCell>{lead.owner?.name ?? "—"}</TableCell>
-                  <TableCell className="whitespace-nowrap text-xs">{lead.source || "—"}</TableCell>
-                  <TableCell className="text-right whitespace-nowrap text-muted-foreground">
-                    {formatDate(lead.createdAt)}
-                  </TableCell>
-                </TableRow>
-              ))}
+              {result.data.map((lead) => {
+                const score = lead.scores?.[0]
+                return (
+                  <TableRow key={lead.id} className="hover:bg-muted/50">
+                    <TableCell>
+                      <Link href={`/leads/${lead.id}`} className="block font-medium hover:underline">
+                        {lead.company?.name ?? "—"}
+                      </Link>
+                      {lead.company?.domain ? (
+                        <span className="block text-xs text-muted-foreground">{lead.company.domain}</span>
+                      ) : null}
+                    </TableCell>
+                    <TableCell>{lead.contact?.fullName ?? "—"}</TableCell>
+                    <TableCell className="text-right">
+                      {score ? <ScoreBadge score={score.icpScore} /> : <ScoreBadge score={lead.fitScore} />}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {score ? <ScoreBadge score={score.overallScore} /> : <ScoreBadge score={lead.score} />}
+                    </TableCell>
+                    <TableCell>
+                      {score ? (
+                        <span
+                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                            score.qualification === "HOT"
+                              ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40"
+                              : score.qualification === "GOOD"
+                                ? "bg-green-100 text-green-800 dark:bg-green-900/40"
+                                : score.qualification === "MAYBE"
+                                  ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40"
+                                  : score.qualification === "LOW"
+                                    ? "bg-red-100 text-red-800 dark:bg-red-900/40"
+                                    : "bg-slate-100 text-slate-800 dark:bg-slate-900/40"
+                          }`}
+                        >
+                          {score.qualification}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Not scored</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <PriorityBadge priority={lead.priority} />
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge status={lead.status} />
+                    </TableCell>
+                    <TableCell>{lead.owner?.name ?? "—"}</TableCell>
+                    <TableCell className="whitespace-nowrap text-xs">{lead.source || "—"}</TableCell>
+                    <TableCell className="text-right whitespace-nowrap text-muted-foreground">
+                      {formatDate(lead.createdAt)}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
             </TableBody>
           </Table>
         </div>

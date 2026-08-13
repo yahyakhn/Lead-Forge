@@ -60,6 +60,22 @@ export function ScoreBadge({ score }: { score: number | null | undefined }) {
   )
 }
 
+const QUALIFICATION_MAP: Record<string, { variant: Variant; className: string }> = {
+  HOT: { variant: "outline", className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40" },
+  GOOD: { variant: "outline", className: "bg-green-100 text-green-800 dark:bg-green-900/40" },
+  MAYBE: { variant: "outline", className: "bg-amber-100 text-amber-800 dark:bg-amber-900/40" },
+  LOW: { variant: "outline", className: "bg-red-100 text-red-800 dark:bg-red-900/40" },
+}
+
+export function QualificationBadge({ qualification }: { qualification: string }) {
+  const style = QUALIFICATION_MAP[qualification] ?? { variant: "outline" as const, className: "bg-slate-100 text-slate-800 dark:bg-slate-900/40" }
+  return (
+    <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium", style.className)}>
+      {qualification}
+    </span>
+  )
+}
+
 const VERIFICATION_MAP: Record<string, { variant: Variant; className: string }> = {
   VERIFIED: { variant: "outline", className: "bg-green-100 text-green-800 dark:bg-green-900/40" },
   UNVERIFIED: { variant: "outline", className: "bg-amber-100 text-amber-800 dark:bg-amber-900/40" },

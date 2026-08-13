@@ -11,11 +11,15 @@ import { ErrorState } from "@/components/crm/states"
 import { PageHeader } from "@/components/crm/page-header"
 import { ActivityTimeline } from "@/components/crm/activity-timeline"
 import { EntityAvatar } from "@/components/crm/entity-avatar"
-import { PriorityBadge, ScoreBadge, StatusBadge } from "@/components/crm/badges"
+import { PriorityBadge, ScoreBadge, StatusBadge, QualificationBadge } from "@/components/crm/badges"
+import { ScoreBreakdown } from "@/components/crm/score-breakdown"
 import { LeadQuickSets, LeadActions } from "@/components/crm/lead-actions"
 import { formatDate, formatMoney } from "@/lib/format"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ArrowLeftIcon } from "lucide-react"
+import { latestLeadScore, scoreHistory } from "@/lib/lead-engine/scoring/service"
+import type { CriterionResult } from "@/lib/lead-engine/scoring/engine"
+import { RescoreButton } from "@/components/crm/lead-engine/rescore-button"
 
 export default async function LeadDetailPage({
   params,
@@ -27,7 +31,7 @@ export default async function LeadDetailPage({
 
   let data
   try {
-    const [lead, activities, deals, stages, users, lists, memberIds] = await Promise.all([
+    const [lead, activities, deals, stages, users, lists, memberIds, latestScore, history] = await Promise.all([
       getLead(session.organization.id, id),
       listActivities(session.organization.id, { leadId: id, pageSize: 50 }),
       listDeals(session.organization.id, { leadId: id, pageSize: 50 }),
@@ -35,13 +39,15 @@ export default async function LeadDetailPage({
       listUsers(session.organization.id),
       listLeadLists(session.organization.id),
       listLeadListMembershipIds(session.organization.id, id),
+      latestLeadScore(session.organization.id, id),
+      scoreHistory(session.organization.id, id),
     ])
-    data = { lead, activities, deals, stages, users, lists, memberIds }
+    data = { lead, activities, deals, stages, users, lists, memberIds, latestScore, history }
   } catch {
     return <ErrorState message="We couldn't load this lead." />
   }
 
-  const { lead, activities, deals, stages, users, lists, memberIds } = data
+  const { lead, activities, deals, stages, users, lists, memberIds, latestScore, history } = data
   if (!lead) notFound()
 
   const ownerOptions = users.map((u) => ({ value: u.id, label: u.name, hint: u.email }))
@@ -70,6 +76,12 @@ export default async function LeadDetailPage({
             </span>
             <PriorityBadge priority={lead.priority} />
             <ScoreBadge score={lead.score} />
+            {latestScore && (
+              <>
+                <ScoreBadge score={latestScore.icpScore} />
+                <QualificationBadge qualification={latestScore.qualification} />
+              </>
+            )}
           </span>
         }
         actions={
@@ -121,6 +133,65 @@ export default async function LeadDetailPage({
                 ))}
               </div>
             ) : null}
+          </section>
+
+          <section className="rounded-xl border bg-card p-4">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-sm font-semibold">Lead Score</h2>
+              <RescoreButton kind="lead" id={id} disabled={!latestScore} />
+            </div>
+            {latestScore ? (
+              <div className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div className="rounded-lg border bg-muted/50 p-3 text-center">
+                    <dt className="text-xs text-muted-foreground">ICP Fit Score</dt>
+                    <dd className="mt-1 text-2xl font-bold tabular-nums">{latestScore.icpScore}</dd>
+                  </div>
+                  <div className="rounded-lg border bg-muted/50 p-3 text-center">
+                    <dt className="text-xs text-muted-foreground">Overall Score</dt>
+                    <dd className="mt-1 text-2xl font-bold tabular-nums">{latestScore.overallScore}</dd>
+                  </div>
+                  <div className="rounded-lg border bg-muted/50 p-3 text-center">
+                    <dt className="text-xs text-muted-foreground">Qualification</dt>
+                    <dd className="mt-1">
+                      <QualificationBadge qualification={latestScore.qualification} />
+                    </dd>
+                  </div>
+                </div>
+                <div className="mt-4">
+                  <ScoreBreakdown
+                    breakdown={(latestScore.scoreBreakdown as unknown as CriterionResult[]) ?? []}
+                    reasons={(latestScore.reasons as unknown as string[]) ?? []}
+                  />
+                </div>
+                <div className="pt-4 border-t">
+                  <p className="text-xs text-muted-foreground">
+                    Model: v{latestScore.modelVersion} · Scored: {formatDate(latestScore.scoredAt)}
+                    {latestScore.scoreStatus === "STALE" && <span className="ml-2 text-amber-600">⚠ Stale — consider rescoring</span>}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">Not scored yet.</p>
+            )}
+            {history && history.length > 1 && (
+              <div className="mt-4 pt-4 border-t">
+                <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Score History</h3>
+                <div className="mt-2 space-y-2 text-sm">
+                  {history.slice(1).map((h: (typeof history)[number]) => (
+                    <div key={h.id} className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <span className="tabular-nums">{h.icpScore}/{h.overallScore}</span>
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted">
+                        {h.qualification}
+                      </span>
+                      <span>v{h.modelVersion}</span>
+                      <span>{formatDate(h.scoredAt)}</span>
+                      <span>{h.scoreStatus === "STALE" && "⚠ Stale"}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </section>
 
           <section className="rounded-xl border bg-card p-4">

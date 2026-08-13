@@ -9,6 +9,12 @@ import { ConvertCandidateButton } from "@/components/crm/lead-engine/convert-can
 import { previewCandidate, canConvertCandidate, type PreviewPlan } from "@/lib/lead-engine/conversion/service"
 import { formatDateTime } from "@/lib/format"
 import { humanize } from "@/lib/crm/icp-shared"
+import { ScoreBadge, QualificationBadge } from "@/components/crm/badges"
+import { ScoreBreakdown } from "@/components/crm/score-breakdown"
+import { latestCandidateScore } from "@/lib/lead-engine/scoring/service"
+import type { CriterionResult } from "@/lib/lead-engine/scoring/engine"
+import { RescoreButton } from "@/components/crm/lead-engine/rescore-button"
+import { PreviewScoreButton } from "@/components/crm/lead-engine/preview-score-button"
 
 function Field({ label, value }: { label: string; value: string | null | undefined }) {
   return (
@@ -32,6 +38,8 @@ export default async function CandidateDetailPage({ params }: { params: Promise<
   const { id } = await params
   const candidate = await getCandidate(session.organization.id, id)
   if (!candidate) notFound()
+
+  const latestScore = await latestCandidateScore(session.organization.id, id)
 
   const provenance = (candidate.fieldProvenance ?? {}) as Record<string, { value?: string; method?: string; sourceUrl?: string; evidenceType?: string; rejected?: string; duplicate_of?: string }>
   const rawData = candidate.rawData as { deterministic?: { evidence?: unknown } } | null
@@ -115,6 +123,47 @@ export default async function CandidateDetailPage({ params }: { params: Promise<
           </ul>
         </div>
       ) : null}
+
+      <div className="mb-4 rounded-xl border bg-card p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Lead Score</h2>
+            {latestScore ? (
+              <p className="mt-1 text-sm text-muted-foreground">
+                Scored with ICP profile <code className="px-1 rounded bg-muted">{latestScore.icpProfileId?.slice(-8)}</code> (v{latestScore.modelVersion}) · {formatDateTime(latestScore.scoredAt)}
+                {latestScore.scoreStatus === "STALE" && <span className="ml-2 text-amber-600">⚠ Stale</span>}
+              </p>
+            ) : (
+              <p className="mt-1 text-sm text-muted-foreground">Not scored yet.</p>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {latestScore && (
+              <>
+                <ScoreBadge score={latestScore.icpScore} />
+                <ScoreBadge score={latestScore.overallScore} />
+                <QualificationBadge qualification={latestScore.qualification} />
+              </>
+            )}
+          </div>
+        </div>
+        {latestScore && (
+          <div className="mt-4">
+            <ScoreBreakdown
+              breakdown={(latestScore.scoreBreakdown as unknown as CriterionResult[]) ?? []}
+              reasons={(latestScore.reasons as unknown as string[]) ?? []}
+            />
+          </div>
+        )}
+        {(!latestScore || latestScore.scoreStatus === "STALE") && (
+          <div className="mt-4 pt-4 border-t">
+            <RescoreButton kind="candidate" id={id} disabled={!latestScore} />
+          </div>
+        )}
+        <div className="mt-4 pt-4 border-t">
+          <PreviewScoreButton kind="candidate" id={id} />
+        </div>
+      </div>
 
       <div className="mb-4 grid gap-4 rounded-xl border bg-card p-5 lg:grid-cols-2">
         <div>

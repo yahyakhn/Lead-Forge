@@ -10,7 +10,7 @@ export async function createCompany(orgId: string, input: CompanyInput) {
 }
 
 export async function getCompany(orgId: string, id: string) {
-  return prisma.company.findFirst({ where: { id, { organizationId: orgId } } })
+  return prisma.company.findFirst({ where: { id, organizationId: orgId } })
 }
 
 const COMPANY_LIST_INCLUDE = { _count: { select: { contacts: true, leads: true } } } satisfies Prisma.CompanyInclude
@@ -28,7 +28,7 @@ export async function listCompanies(orgId: string, filters: CompanyFilters): Pro
   const { page, pageSize } = parsePagination(filters)
   const search = filters.search?.trim()
   const where: Prisma.CompanyWhereInput = {
-    { organizationId: orgId },
+    organizationId: orgId,
     ...(filters.status ? { status: filters.status as CompanyStatus } : {}),
     ...(search
       ? {
@@ -62,7 +62,7 @@ export async function updateCompany(orgId: string, id: string, input: Partial<Co
 }
 
 export async function deleteCompany(orgId: string, id: string): Promise<boolean> {
-  const result = await prisma.company.deleteMany({ where: { id, { organizationId: orgId } } })
+  const result = await prisma.company.deleteMany({ where: { id, organizationId: orgId } })
   return result.count > 0
 }
 

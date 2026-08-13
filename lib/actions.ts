@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { z } from "zod"
 import { requireSession, destroySession } from "@/lib/auth"
+import { prisma } from "@/lib/db"
 import {
   companySchema,
   contactSchema,
@@ -44,11 +45,17 @@ import {
   deactivateSource,
 } from "@/lib/lead-engine/sources"
 import { createRun, cancelRun, getRawPage } from "@/lib/lead-engine/runs"
-import { enqueueRun, enqueueExtractionRun } from "@/lib/lead-engine/job-queue"
+import { enqueueRun, enqueueExtractionRun, enqueueScoringJob } from "@/lib/lead-engine/job-queue"
 import { startExtraction } from "@/lib/lead-engine/extraction/service"
 import { deduplicateRun } from "@/lib/lead-engine/resolution/service"
 import { confirmDuplicateGroup, rejectDuplicateGroup } from "@/lib/lead-engine/resolution/groups"
 import { convertCandidate, bulkConvert, bulkPreview, type BulkSummary, type PreviewPlan } from "@/lib/lead-engine/conversion/service"
+import {
+  scoreCandidate,
+  scoreLead,
+  startBulkScoring,
+  type ScoredResult,
+} from "@/lib/lead-engine/scoring/service"
 
 export type ActionResult = { ok: true; id?: string; redirectTo?: string } | { ok: false; error: string }
 
@@ -177,26 +184,33 @@ export async function moveLeadToStageAction(leadId: string, stageId: string): Pr
 }
 
 export async function createICPAction(input: unknown): Promise<ActionResult> {
+  await requireAdmin()
   return run(icpSchema, input, (orgId, userId, data: IcpInput) => createICP(orgId, userId, data), () => ["/icp"])
 }
 
 export async function updateICPAction(id: string, input: unknown): Promise<ActionResult> {
-  return run(icpSchema, input, (orgId, _u, data: IcpInput) => updateICP(orgId, id, data), () => [`/icp/${id}`, "/icp"])
+  await requireAdmin()
+  const session = await requireSession()
+  return run(icpSchema, input, (orgId, _u, data: IcpInput) => updateICP(orgId, id, data, { id: session.user.id, name: session.user.name }), () => [`/icp/${id}`, "/icp"])
 }
 
 export async function deleteICPAction(id: string): Promise<ActionResult> {
+  await requireAdmin()
   return mutate((orgId) => deleteICP(orgId, id), ["/icp", "/dashboard"], "/icp")
 }
 
 export async function activateICPAction(id: string): Promise<ActionResult> {
+  await requireAdmin()
   return mutate((orgId) => activateICP(orgId, id), ["/icp", `/icp/${id}`, "/dashboard"])
 }
 
 export async function deactivateICPAction(id: string): Promise<ActionResult> {
+  await requireAdmin()
   return mutate((orgId) => deactivateICP(orgId, id), ["/icp", `/icp/${id}`, "/dashboard"])
 }
 
 export async function duplicateICPAction(id: string): Promise<ActionResult> {
+  await requireAdmin()
   return mutate((orgId) => duplicateICP(orgId, id), ["/icp"])
 }
 
@@ -358,5 +372,86 @@ export async function getRawPageAction(pageId: string): Promise<
       truncatedText: meta.textTruncated === true,
       pageTooLarge: meta.pageTooLarge === true,
     },
+  }
+}
+
+async function requireAdmin() {
+  const session = await requireSession()
+  if (session.user.role !== "ADMIN") {
+    throw new Error("Admin access required")
+  }
+}
+
+export async function scoreCandidateAction(candidateId: string): Promise<ActionResult> {
+  const session = await requireSession()
+  try {
+    const result = await scoreCandidate(session.organization.id, candidateId, { actor: { id: session.user.id, name: session.user.name } })
+    if (!result) return { ok: false, error: "Candidate not found or no active ICP" }
+    revalidatePath("/lead-engine/candidates")
+    revalidatePath("/dashboard")
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Scoring failed" }
+  }
+}
+
+export async function rescoreLeadAction(leadId: string): Promise<ActionResult> {
+  const session = await requireSession()
+  try {
+    const result = await scoreLead(session.organization.id, leadId, { actor: { id: session.user.id, name: session.user.name } }, true)
+    if (!result) return { ok: false, error: "Lead not found or no active ICP" }
+    revalidatePath("/leads")
+    revalidatePath("/dashboard")
+    revalidatePath(`/leads/${leadId}`)
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Rescoring failed" }
+  }
+}
+
+export async function bulkScoreCandidatesAction(candidateIds: string[]): Promise<ActionResult> {
+  const session = await requireSession()
+  try {
+    const result = await startBulkScoring(session.organization.id, candidateIds, { id: session.user.id, name: session.user.name })
+    if (!result.ok) return { ok: false, error: result.error }
+    enqueueScoringJob(result.jobId)
+    revalidatePath("/lead-engine/candidates")
+    revalidatePath("/dashboard")
+    return { ok: true, id: result.jobId }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Bulk scoring failed" }
+  }
+}
+
+export async function scoringJobAction(jobId: string): Promise<{ ok: boolean; job?: { status: string; total: number; processed: number; scored: number; failed: number; hot: number; good: number; maybe: number; low: number; finishedAt: Date | null }; error?: string }> {
+  const session = await requireSession()
+  try {
+    const job = await prisma.leadScoreJob.findFirst({ where: { id: jobId, organizationId: session.organization.id } })
+    if (!job) return { ok: false, error: "Job not found" }
+    return {
+      ok: true,
+      job: { status: job.status, total: job.total, processed: job.processed, scored: job.scored, failed: job.failed, hot: job.hot, good: job.good, maybe: job.maybe, low: job.low, finishedAt: job.finishedAt },
+    }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Failed to load job" }
+  }
+}
+
+export async function previewScoreAction(input: { leadId?: string; candidateId?: string; icpProfileId?: string }): Promise<{ ok: boolean; result?: ScoredResult; error?: string }> {
+  const session = await requireSession()
+  try {
+    if (input.candidateId) {
+      const candidate = await scoreCandidate(session.organization.id, input.candidateId, { actor: { id: session.user.id, name: session.user.name } }, true)
+      if (!candidate) return { ok: false, error: "Candidate not found or no active ICP" }
+      return { ok: true, result: candidate }
+    }
+    if (input.leadId) {
+      const lead = await scoreLead(session.organization.id, input.leadId, { actor: { id: session.user.id, name: session.user.name } }, true)
+      if (!lead) return { ok: false, error: "Lead not found or no active ICP" }
+      return { ok: true, result: lead }
+    }
+    return { ok: false, error: "Either leadId or candidateId required" }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Preview failed" }
   }
 }

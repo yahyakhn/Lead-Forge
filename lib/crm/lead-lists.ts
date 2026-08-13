@@ -12,7 +12,7 @@ export async function createLeadList(orgId: string, input: LeadListInput, create
 
 export async function getLeadList(orgId: string, id: string) {
   return prisma.leadList.findFirst({
-    where: { id, { organizationId: orgId } },
+    where: { id, organizationId: orgId },
     include: {
       ...listInclude(),
       memberships: {
@@ -44,7 +44,7 @@ export async function listLeadLists(orgId: string, filters: LeadListFilters = {}
   const { page, pageSize } = parsePagination(filters)
   const search = filters.search?.trim()
   const where: Prisma.LeadListWhereInput = {
-    { organizationId: orgId },
+    organizationId: orgId,
     ...(search ? { name: { contains: search, mode: "insensitive" } } : {}),
   }
   const [total, data] = await Promise.all([
@@ -61,13 +61,13 @@ export async function updateLeadList(orgId: string, id: string, input: Partial<L
 }
 
 export async function deleteLeadList(orgId: string, id: string): Promise<boolean> {
-  const result = await prisma.leadList.deleteMany({ where: { id, { organizationId: orgId } } })
+  const result = await prisma.leadList.deleteMany({ where: { id, organizationId: orgId } })
   return result.count > 0
 }
 
 export async function addLeadToList(orgId: string, listId: string, leadId: string) {
-  const list = await prisma.leadList.findFirst({ where: { id: listId, { organizationId: orgId } } })
-  const lead = await prisma.lead.findFirst({ where: { id: leadId, { organizationId: orgId } } })
+  const list = await prisma.leadList.findFirst({ where: { id: listId, organizationId: orgId } })
+  const lead = await prisma.lead.findFirst({ where: { id: leadId, organizationId: orgId } })
   if (!list || !lead) throw new Error("List or lead does not exist in this organization")
   return prisma.leadListMembership.upsert({
     where: { listId_leadId: { listId, leadId } },
@@ -77,17 +77,17 @@ export async function addLeadToList(orgId: string, listId: string, leadId: strin
 }
 
 export async function removeLeadFromList(orgId: string, listId: string, leadId: string) {
-  const list = await prisma.leadList.findFirst({ where: { id: listId, { organizationId: orgId } } })
+  const list = await prisma.leadList.findFirst({ where: { id: listId, organizationId: orgId } })
   if (!list) throw new Error("List does not exist in this organization")
   const result = await prisma.leadListMembership.deleteMany({ where: { listId, leadId } })
   return result.count > 0
 }
 
 export async function listLeadListMembershipIds(orgId: string, leadId: string): Promise<string[]> {
-  const lead = await prisma.lead.findFirst({ where: { id: leadId, { organizationId: orgId } } })
+  const lead = await prisma.lead.findFirst({ where: { id: leadId, organizationId: orgId } })
   if (!lead) return []
   const rows = await prisma.leadListMembership.findMany({
-    where: { leadId, list: { { organizationId: orgId } } },
+    where: { leadId, list: { organizationId: orgId } },
     select: { listId: true },
   })
   return rows.map((r) => r.listId)

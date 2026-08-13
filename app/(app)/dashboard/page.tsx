@@ -21,6 +21,10 @@ import {
   TimerIcon,
   TriangleAlertIcon,
   UsersIcon,
+  TrendingUpIcon,
+  TargetIcon,
+  TrophyIcon,
+  AlertTriangleIcon,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 
@@ -151,6 +155,60 @@ function SourceCard({ s }: { s: DashboardData["sources"][number] }) {
   )
 }
 
+function ScoreDistributionCard({ dist }: { dist: DashboardData["scoreDistribution"] }) {
+  const items = [
+    { label: "HOT", value: dist.hot, icon: TrophyIcon, color: "text-emerald-600 bg-emerald-100 dark:bg-emerald-900/40" },
+    { label: "GOOD", value: dist.good, icon: TrendingUpIcon, color: "text-green-600 bg-green-100 dark:bg-green-900/40" },
+    { label: "MAYBE", value: dist.maybe, icon: TargetIcon, color: "text-amber-600 bg-amber-100 dark:bg-amber-900/40" },
+    { label: "LOW", value: dist.low, icon: AlertTriangleIcon, color: "text-red-600 bg-red-100 dark:bg-red-900/40" },
+  ]
+  const total = dist.hot + dist.good + dist.maybe + dist.low + dist.unqualified
+
+  return (
+    <div className="rounded-xl border bg-card p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="flex items-center gap-2 text-sm font-semibold">
+          <TargetIcon className="size-4 text-muted-foreground" /> Lead Scores
+        </h2>
+        <Link href="/leads" className="text-xs text-muted-foreground hover:underline">
+          View all \u2192
+        </Link>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {items.map((item) => (
+          <Link key={item.label} href={`/leads?qualification=${item.label}`} className="group flex items-center gap-3 rounded-lg p-3 transition-colors hover:bg-muted/50">
+            <item.icon className={`size-5 shrink-0 ${item.color}`} />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-muted-foreground">{item.label}</p>
+              <p className="font-semibold tabular-nums">{item.value.toLocaleString()}</p>
+            </div>
+            {total > 0 && (
+              <div className="w-24 text-right text-xs text-muted-foreground">
+                {Math.round((item.value / total) * 100)}%
+              </div>
+            )}
+          </Link>
+        ))}
+        <div className="col-span-2 sm:col-span-2 rounded-lg border bg-muted/50 p-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p className="text-xs text-muted-foreground">Avg ICP Score</p>
+              <p className="font-semibold tabular-nums">{dist.avgIcpScore ?? "\u2014"}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Avg Overall Score</p>
+              <p className="font-semibold tabular-nums">{dist.avgOverallScore ?? "\u2014"}</p>
+            </div>
+            <div className="col-span-2">
+              <p className="text-xs text-muted-foreground">Total scored leads: {total.toLocaleString()}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function RunCard({ run }: { run: DashboardData["recentRuns"][number] }) {
   return (
     <Link
@@ -245,10 +303,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
         <FunnelCard funnel={data.funnel} />
         <WorkQueue queue={data.workQueue} />
-        <div className="rounded-xl border bg-card p-4">
-          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
-            <ActivityIcon className="size-4 text-muted-foreground" /> Recent activity
-          </h2>
+        <ScoreDistributionCard dist={data.scoreDistribution} />
+      </div>
+
+      <section className="mt-6">
+        <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
+          <ActivityIcon className="size-4 text-muted-foreground" /> Recent activity
+        </h2>
           <ul className="space-y-2 text-sm">
             {data.activity.map((a, i) => {
               const Icon = kindIcon[a.kind]
@@ -262,8 +323,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             })}
             {data.activity.length === 0 && <li className="text-xs text-muted-foreground">No activity yet.</li>}
           </ul>
-        </div>
-      </div>
+      </section>
 
       <section className="mt-6">
         <div className="mb-2 flex items-center justify-between">

@@ -3,12 +3,12 @@
 
 import { prisma } from "@/lib/db"
 import { listRuns, runDisplayName } from "@/lib/lead-engine/runs"
-import { ScraperRunStatus, CandidateStatus, ConversionStatus } from "@/generated/prisma/enums"
+import { ScraperRunStatus, CandidateStatus, ConversionStatus, Qualification } from "@/generated/prisma/enums"
 
 export const QUALITY_HIGH = 70
 export const QUALITY_MEDIUM = 40
 
-export type DashboardRangeKey = "today" | "7d" | "30d" | "custom"
+export type DashboardRangeKey = "today" | "7d" | "30d"
 
 export interface DashboardRange {
   key: DashboardRangeKey
@@ -35,11 +35,6 @@ export function parseDashboardRange(raw: Record<string, string | string[] | unde
   if (key === "today") {
     const from = dayStart(now)
     return { key, from, to: new Date(from.getTime() + DAY), prevFrom: new Date(from.getTime() - DAY), prevTo: from, label: "Today" }
-  }
-  if (key === "30d") {
-    const from = dayStart(new Date(now.getTime() - 29 * DAY))
-    const to = dayStart(new Date(now.getTime() + DAY))
-    return { key, from, to, prevFrom: new Date(from.getTime() - 30 * DAY), prevTo: from, label: "Last 30 days" }
   }
   if (key === "30d") {
     const from = dayStart(new Date(now.getTime() - 29 * DAY))
@@ -103,6 +98,15 @@ export interface DashboardData {
     failedRuns: number
   }
   activity: Array<{ time: Date; kind: "run" | "conversion" | "failed"; text: string }>
+  scoreDistribution: {
+    hot: number
+    good: number
+    maybe: number
+    low: number
+    unqualified: number
+    avgIcpScore: number | null
+    avgOverallScore: number | null
+  }
 }
 
 export async function getLeadEngineDashboard(orgId: string, raw: Record<string, string | string[] | undefined>): Promise<DashboardData> {
@@ -117,10 +121,8 @@ export async function getLeadEngineDashboard(orgId: string, raw: Record<string, 
     duplicates,
     needsReview,
     converted,
-    prevConverted,
     pagesCrawled,
     activeRuns,
-    failedRuns,
     sourcesUsedIds,
   ] = await Promise.all([
     prisma.leadCandidate.count({ where: { organizationId: orgId, createdAt: period } }),
@@ -129,10 +131,8 @@ export async function getLeadEngineDashboard(orgId: string, raw: Record<string, 
     prisma.leadCandidate.count({ where: { organizationId: orgId, createdAt: period, status: CandidateStatus.DUPLICATE } }),
     prisma.leadCandidate.count({ where: { organizationId: orgId, status: CandidateStatus.REVIEW } }),
     prisma.leadCandidateConversion.count({ where: { organizationId: orgId, status: ConversionStatus.CONVERTED, convertedAt: period } }),
-    prisma.leadCandidateConversion.count({ where: { organizationId: orgId, status: ConversionStatus.CONVERTED, convertedAt: prevPeriod } }),
     prisma.rawPage.count({ where: { organizationId: orgId, createdAt: period } }),
     prisma.scraperRun.count({ where: { organizationId: orgId, status: { in: [ScraperRunStatus.QUEUED, ScraperRunStatus.RUNNING] } } }),
-    prisma.scraperRun.count({ where: { organizationId: orgId, createdAt: period, status: ScraperRunStatus.FAILED } }),
     prisma.leadCandidate.groupBy({ by: ["sourceId"], where: { organizationId: orgId, createdAt: period }, _count: { _all: true } }),
   ])
 
@@ -213,7 +213,7 @@ export async function getLeadEngineDashboard(orgId: string, raw: Record<string, 
   // Could stream prev-period source deltas; skipped — deltas only on the top
   // metric cards for now.
 
-  const [recentRuns, workQueue, activityRows, conversions] = await Promise.all([
+  const [recentRuns, workQueue, activityRows, conversions, scoreDist] = await Promise.all([
     listRuns(orgId, { page: 1, pageSize: 8 }),
     Promise.all([
       prisma.duplicateGroup.count({ where: { organizationId: orgId, status: "PENDING_REVIEW" } }),
@@ -234,6 +234,12 @@ export async function getLeadEngineDashboard(orgId: string, raw: Record<string, 
       orderBy: { convertedAt: "desc" },
       take: 6,
       select: { convertedAt: true, lead: { select: { title: true, id: true } } },
+    }),
+    prisma.leadScore.groupBy({
+      by: ["qualification"],
+      where: { organizationId: orgId, scoreStatus: "CURRENT" },
+      _count: { _all: true },
+      _avg: { icpScore: true, overallScore: true },
     }),
   ])
 
@@ -257,7 +263,7 @@ export async function getLeadEngineDashboard(orgId: string, raw: Record<string, 
     }
   })
 
-  const activity: DashboardData["activity"] = [
+const activity: DashboardData["activity"] = [
     ...activityRows.map((r) => ({
       time: r.finishedAt ?? r.createdAt,
       kind: (r.status === ScraperRunStatus.FAILED ? "failed" : "run") as "run" | "conversion" | "failed",
@@ -266,11 +272,15 @@ export async function getLeadEngineDashboard(orgId: string, raw: Record<string, 
     ...conversions.map((c) => ({
       time: c.convertedAt ?? new Date(0),
       kind: "conversion" as const,
-      text: `Converted: ${c.lead?.title ?? "lead"} → CRM`,
+      text: `Converted: ${c.lead?.title ?? "lead"} \u2192 CRM`,
     })),
   ]
     .sort((a, b) => b.time.getTime() - a.time.getTime())
     .slice(0, 8)
+
+  const scoreDistMap = new Map(scoreDist.map((s) => [s.qualification, s._count._all]))
+  const avgIcp = scoreDist[0]?._avg.icpScore ?? null
+  const avgOverall = scoreDist[0]?._avg.overallScore ?? null
 
   return {
     range,
@@ -297,8 +307,19 @@ export async function getLeadEngineDashboard(orgId: string, raw: Record<string, 
       failedRuns: workQueue[3],
     },
     activity,
+    scoreDistribution: {
+      hot: scoreDistMap.get(Qualification.HOT) ?? 0,
+      good: scoreDistMap.get(Qualification.GOOD) ?? 0,
+      maybe: scoreDistMap.get(Qualification.MAYBE) ?? 0,
+      low: scoreDistMap.get(Qualification.LOW) ?? 0,
+      unqualified: scoreDistMap.get(Qualification.UNQUALIFIED) ?? 0,
+      avgIcpScore: avgIcp ? Math.round(avgIcp) : null,
+      avgOverallScore: avgOverall ? Math.round(avgOverall) : null,
+    },
   }
 }
+
+// Candidate counts per run (candidates/unique/high quality/converted) for a}
 
 // Candidate counts per run (candidates/unique/high quality/converted) for a
 // bounded set of run ids — used by the runs list and dashboard recent runs.

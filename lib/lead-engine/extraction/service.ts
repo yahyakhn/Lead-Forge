@@ -437,7 +437,7 @@ export async function processPage(page: PageForExtraction, provider: LeadExtract
 // ── Extraction run orchestration (spec §44-§45, §51, §62) ────────────────
 
 export async function startExtraction(orgId: string, scraperRunId: string): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
-  const run = await prisma.scraperRun.findFirst({ where: { id: scraperRunId, { organizationId: orgId } }, select: { id: true } })
+  const run = await prisma.scraperRun.findFirst({ where: { id: scraperRunId, organizationId: orgId }, select: { id: true } })
   if (!run) return { ok: false, error: "Run not found in this organization" }
   const existing = await prisma.extractionRun.findUnique({
     where: { organizationId_scraperRunId: { organizationId: orgId, scraperRunId } },
@@ -537,7 +537,7 @@ export async function reprocessRun(orgId: string, scraperRunId: string): Promise
 }
 
 export async function reprocessPage(orgId: string, rawPageId: string, provider: LeadExtractionAI = new DeepSeekProvider()): Promise<PipelineOutcome> {
-  const page = await prisma.rawPage.findFirst({ where: { id: rawPageId, { organizationId: orgId } } })
+  const page = await prisma.rawPage.findFirst({ where: { id: rawPageId, organizationId: orgId } })
   if (!page) throw new Error("Page not found in this organization")
   return processPage(page as unknown as PageForExtraction, provider)
 }
@@ -551,8 +551,8 @@ export async function getExtractionRun(orgId: string, scraperRunId: string) {
 }
 
 export interface CandidateFilters {
-  page?: number | string | string[]
-  pageSize?: number | string | string[]
+  page?: string
+  pageSize?: string
   method?: string
   status?: string
   sourceId?: string
@@ -565,12 +565,15 @@ export interface CandidateFilters {
   minQuality?: string
   sort?: string
   q?: string
+  minIcpScore?: string
+  minOverallScore?: string
+  qualification?: string
 }
 
 export async function listCandidates(orgId: string, filters: CandidateFilters = {}) {
   const { parsePagination } = await import("@/lib/crm/pagination")
   const { page, pageSize } = parsePagination(filters)
-  const where: Prisma.LeadCandidateWhereInput = { { organizationId: orgId } }
+  const where: Prisma.LeadCandidateWhereInput = { organizationId: orgId }
   if (filters.method) where.extractionMethod = filters.method as ExtractionMethod
   if (filters.status) where.status = filters.status as CandidateStatus
   if (filters.sourceId) where.sourceId = filters.sourceId
@@ -582,6 +585,17 @@ export async function listCandidates(orgId: string, filters: CandidateFilters = 
   if (filters.hasLinkedIn === "1" || filters.hasLinkedIn === "true") where.NOT = { linkedinUrl: null }
   const minQuality = Number(filters.minQuality)
   if (filters.minQuality && !Number.isNaN(minQuality)) where.dataQualityScore = { gte: minQuality }
+  if (filters.minIcpScore) {
+    const v = Number(filters.minIcpScore)
+    if (!Number.isNaN(v)) where.scores = { some: { icpScore: { gte: v }, scoreStatus: "CURRENT" } }
+  }
+  if (filters.minOverallScore) {
+    const v = Number(filters.minOverallScore)
+    if (!Number.isNaN(v)) where.scores = { some: { overallScore: { gte: v }, scoreStatus: "CURRENT" } }
+  }
+  if (filters.qualification) {
+    where.scores = { some: { qualification: filters.qualification as Prisma.EnumQualificationFilter["equals"], scoreStatus: "CURRENT" } }
+  }
   if (filters.q?.trim()) {
     const q = filters.q.trim().toLowerCase()
     where.OR = [
@@ -600,7 +614,9 @@ export async function listCandidates(orgId: string, filters: CandidateFilters = 
           ? { companyName: "asc" }
           : filters.sort === "confidence"
             ? { extractionConfidence: "desc" }
-            : { createdAt: "desc" }
+            : filters.sort === "icpScore"
+              ? { scores: { _count: "desc" } } // placeholder - would need a subquery
+              : { createdAt: "desc" }
   const [total, data] = await Promise.all([
     prisma.leadCandidate.count({ where }),
     prisma.leadCandidate.findMany({
@@ -625,6 +641,12 @@ export async function listCandidates(orgId: string, filters: CandidateFilters = 
         createdAt: true,
         runId: true,
         sourceId: true,
+        scores: {
+          where: { scoreStatus: "CURRENT" },
+          take: 1,
+          orderBy: { scoredAt: "desc" },
+          select: { icpScore: true, overallScore: true, qualification: true, scoreStatus: true, modelVersion: true },
+        },
       },
     }),
   ])
@@ -633,7 +655,7 @@ export async function listCandidates(orgId: string, filters: CandidateFilters = 
 
 export async function getCandidate(orgId: string, id: string) {
   return prisma.leadCandidate.findFirst({
-    where: { id, { organizationId: orgId } },
+    where: { id, organizationId: orgId },
     include: {
       contacts: { orderBy: { createdAt: "asc" } },
       run: { select: { id: true, status: true, createdAt: true } },

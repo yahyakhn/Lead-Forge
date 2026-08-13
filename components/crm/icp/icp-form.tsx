@@ -20,11 +20,14 @@ import {
   normalizeCriteria,
   type ICPCriteria,
 } from "@/lib/crm/icp-shared"
+import { ALL_SENIORITIES, DEFAULT_WEIGHTS, DEFAULT_THRESHOLDS, DEFAULT_UNKNOWN_CREDIT } from "@/lib/lead-engine/scoring/engine"
 import { cn } from "@/lib/utils"
 
 const CURRENCY_OPTIONS: SearchOption[] = SUPPORTED_CURRENCIES.map((c) => ({ value: c, label: c }))
 const COMPANY_TYPE_OPTIONS = COMPANY_TYPES.map((t) => ({ value: t, label: humanize(t) }))
 const SIGNAL_OPTIONS = SIGNALS.map((s) => ({ value: s, label: humanize(s) }))
+const SENIORITY_OPTIONS = ALL_SENIORITIES.map((s) => ({ value: s, label: humanize(s) }))
+const WEIGHT_KEYS = ["industry", "companySize", "location", "title", "keyword", "domain", "quality"] as const
 
 export interface ICPFormInitial {
   name: string
@@ -127,6 +130,25 @@ export function ICPForm({
   const [excludeCompanyTypes, setExcludeCompanyTypes] = useState<string[]>(initial?.criteria.exclusions.companyTypes ?? [])
   const [excludeKeywords, setExcludeKeywords] = useState<string[]>(initial?.criteria.exclusions.keywords ?? [])
 
+  const scoring = initial?.criteria.scoring ?? {
+    keywords: [],
+    jobTitles: [],
+    seniorities: [],
+    domains: [],
+    weights: DEFAULT_WEIGHTS,
+    thresholds: DEFAULT_THRESHOLDS,
+    unknownCredit: DEFAULT_UNKNOWN_CREDIT,
+  }
+  const [scoringKeywords, setScoringKeywords] = useState<string[]>(scoring.keywords)
+  const [scoringJobTitles, setScoringJobTitles] = useState<string[]>(scoring.jobTitles)
+  const [scoringSeniorities, setScoringSeniorities] = useState<string[]>(scoring.seniorities)
+  const [scoringDomains, setScoringDomains] = useState<string[]>(scoring.domains)
+  const [scoringWeights, setScoringWeights] = useState<Record<string, number>>(scoring.weights)
+  const [scoringThresholdHot, setScoringThresholdHot] = useState<number>(scoring.thresholds.hot)
+  const [scoringThresholdGood, setScoringThresholdGood] = useState<number>(scoring.thresholds.good)
+  const [scoringThresholdMaybe, setScoringThresholdMaybe] = useState<number>(scoring.thresholds.maybe)
+  const [scoringUnknownCredit, setScoringUnknownCredit] = useState<number>(scoring.unknownCredit)
+
   const liveCriteria = normalizeCriteria({
     industries, countries, regions, cities,
     employeeMin: toNumber(employeeMin), employeeMax: toNumber(employeeMax),
@@ -134,6 +156,18 @@ export function ICPForm({
     technologies, companyTypes, signals,
     companyAgeMin: toNumber(ageMin), companyAgeMax: toNumber(ageMax),
     excludeIndustries, excludeCountries, excludeCompanyTypes, excludeKeywords,
+    scoringKeywords, scoringJobTitles, scoringSeniorities, scoringDomains,
+    scoringWeightIndustry: scoringWeights.industry,
+    scoringWeightCompanySize: scoringWeights.companySize,
+    scoringWeightLocation: scoringWeights.location,
+    scoringWeightTitle: scoringWeights.title,
+    scoringWeightKeyword: scoringWeights.keyword,
+    scoringWeightDomain: scoringWeights.domain,
+    scoringWeightQuality: scoringWeights.quality,
+    scoringThresholdHot,
+    scoringThresholdGood,
+    scoringThresholdMaybe,
+    scoringUnknownCredit,
   })
 
   const applyPreset = (preset: (typeof EMPLOYEE_PRESETS)[number]) => {
@@ -145,6 +179,10 @@ export function ICPForm({
     const presetMin = String(preset.min)
     const presetMax = preset.max !== undefined ? String(preset.max) : ""
     return employeeMin === presetMin && employeeMax === presetMax
+  }
+
+  const updateWeight = (key: string, value: number) => {
+    setScoringWeights((prev) => ({ ...prev, [key]: Math.max(0, Math.min(100, value)) }))
   }
 
   const submit = () => {
@@ -160,6 +198,18 @@ export function ICPForm({
         technologies, companyTypes, signals,
         companyAgeMin: toNumber(ageMin), companyAgeMax: toNumber(ageMax),
         excludeIndustries, excludeCountries, excludeCompanyTypes, excludeKeywords,
+        scoringKeywords, scoringJobTitles, scoringSeniorities, scoringDomains,
+        scoringWeightIndustry: scoringWeights.industry,
+        scoringWeightCompanySize: scoringWeights.companySize,
+        scoringWeightLocation: scoringWeights.location,
+        scoringWeightTitle: scoringWeights.title,
+        scoringWeightKeyword: scoringWeights.keyword,
+        scoringWeightDomain: scoringWeights.domain,
+        scoringWeightQuality: scoringWeights.quality,
+        scoringThresholdHot,
+        scoringThresholdGood,
+        scoringThresholdMaybe,
+        scoringUnknownCredit,
       })
       if (result.ok) {
         toast.success(submitLabel === "Create ICP" ? "ICP created." : "ICP updated.")
@@ -273,6 +323,65 @@ export function ICPForm({
           <CheckboxGroup label="Excluded company types" options={COMPANY_TYPE_OPTIONS} value={excludeCompanyTypes} onChange={setExcludeCompanyTypes} />
           <Field label="Excluded keywords">
             <TagInput values={excludeKeywords} onChange={setExcludeKeywords} placeholder="e.g. consulting, outsourcing" ariaLabel="Add excluded keyword" />
+          </Field>
+        </Section>
+
+        <Section title="Lead Scoring Configuration">
+          <Field label="Target Keywords">
+            <TagInput values={scoringKeywords} onChange={setScoringKeywords} placeholder="e.g. CRM, SaaS, sales, automation" ariaLabel="Add target keyword" />
+            <p className="text-xs text-muted-foreground">Keywords to match against company name, description, industry, and title.</p>
+          </Field>
+          <Field label="Target Job Titles">
+            <TagInput values={scoringJobTitles} onChange={setScoringJobTitles} placeholder="e.g. CEO, CTO, VP Sales, Head of Growth" ariaLabel="Add target job title" />
+            <p className="text-xs text-muted-foreground">Exact or partial title matches (normalized).</p>
+          </Field>
+          <CheckboxGroup label="Target Seniorities" options={SENIORITY_OPTIONS} value={scoringSeniorities} onChange={setScoringSeniorities} />
+          <Field label="Target Domains">
+            <TagInput values={scoringDomains} onChange={setScoringDomains} placeholder="e.g. software.com, example.io" ariaLabel="Add target domain" />
+            <p className="text-xs text-muted-foreground">Domain patterns to match (supports subdomain matching).</p>
+          </Field>
+
+          <div className="grid gap-4">
+            <Field label="Qualification Thresholds">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="grid gap-1.5">
+                  <Label className="text-xs font-medium">HOT ≥</Label>
+                  <Input type="number" min={1} max={100} value={scoringThresholdHot} onChange={(e) => setScoringThresholdHot(Number(e.target.value))} inputMode="numeric" />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label className="text-xs font-medium">GOOD ≥</Label>
+                  <Input type="number" min={1} max={100} value={scoringThresholdGood} onChange={(e) => setScoringThresholdGood(Number(e.target.value))} inputMode="numeric" />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label className="text-xs font-medium">MAYBE ≥</Label>
+                  <Input type="number" min={0} max={99} value={scoringThresholdMaybe} onChange={(e) => setScoringThresholdMaybe(Number(e.target.value))} inputMode="numeric" />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">Scores below MAYBE are classified as LOW.</p>
+            </Field>
+            <Field label="Unknown Data Credit (%)">
+              <Input type="number" min={0} max={100} value={scoringUnknownCredit} onChange={(e) => setScoringUnknownCredit(Number(e.target.value))} inputMode="numeric" />
+              <p className="text-xs text-muted-foreground">Partial credit when a criterion has no data (default 40%).</p>
+            </Field>
+          </div>
+
+          <Field label="Criterion Weights (sum normalizes to 100)">
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              {WEIGHT_KEYS.map((key) => (
+                <div key={key} className="grid gap-1.5">
+                  <Label className="text-xs font-medium capitalize">{key}</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={scoringWeights[key] ?? DEFAULT_WEIGHTS[key]}
+                    onChange={(e) => updateWeight(key, Number(e.target.value))}
+                    inputMode="numeric"
+                  />
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">Weights are automatically normalized to sum to 100.</p>
           </Field>
         </Section>
       </div>

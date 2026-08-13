@@ -7,6 +7,7 @@ import {
   LeadStatus,
 } from "@/generated/prisma/client"
 import { COMPANY_TYPES, SIGNALS, SUPPORTED_CURRENCIES } from "@/lib/crm/icp-shared"
+import { ALL_SENIORITIES } from "@/lib/lead-engine/scoring/engine"
 
 function opt(max: number) {
   return z.preprocess(
@@ -213,6 +214,21 @@ export const icpSchema = z
     excludeCountries: listOfStrings(),
     excludeCompanyTypes: enumList(COMPANY_TYPES),
     excludeKeywords: listOfStrings(),
+    scoringKeywords: listOfStrings(),
+    scoringJobTitles: listOfStrings(),
+    scoringSeniorities: enumList(ALL_SENIORITIES),
+    scoringDomains: listOfStrings(),
+    scoringWeightIndustry: optInt(0, 100),
+    scoringWeightCompanySize: optInt(0, 100),
+    scoringWeightLocation: optInt(0, 100),
+    scoringWeightTitle: optInt(0, 100),
+    scoringWeightKeyword: optInt(0, 100),
+    scoringWeightDomain: optInt(0, 100),
+    scoringWeightQuality: optInt(0, 100),
+    scoringThresholdHot: optInt(1, 100),
+    scoringThresholdGood: optInt(1, 100),
+    scoringThresholdMaybe: optInt(0, 99),
+    scoringUnknownCredit: optInt(0, 100),
   })
   .refine((d) => d.employeeMax === undefined || d.employeeMin === undefined || d.employeeMax >= d.employeeMin, {
     message: "Employee maximum must be at least the minimum",
@@ -226,6 +242,16 @@ export const icpSchema = z
     message: "Company age maximum must be at least the minimum",
     path: ["companyAgeMax"],
   })
+  .refine(
+    (d) =>
+      d.scoringThresholdHot === undefined || d.scoringThresholdGood === undefined || d.scoringThresholdHot > d.scoringThresholdGood,
+    { message: "HOT threshold must be higher than GOOD", path: ["scoringThresholdHot"] },
+  )
+  .refine(
+    (d) =>
+      d.scoringThresholdGood === undefined || d.scoringThresholdMaybe === undefined || d.scoringThresholdGood > d.scoringThresholdMaybe,
+    { message: "GOOD threshold must be higher than MAYBE", path: ["scoringThresholdGood"] },
+  )
 
 export type CompanyInput = z.infer<typeof companySchema>
 export type ContactInput = z.infer<typeof contactSchema>

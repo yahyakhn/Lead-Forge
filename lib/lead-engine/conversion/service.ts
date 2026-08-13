@@ -8,6 +8,7 @@ import { CandidateStatus, ConversionStatus, ActivityType } from "@/generated/pri
 import { normalizeCompanyName, normalizeDomain, normalizeLinkedInUrl } from "@/lib/lead-engine/resolution/normalize"
 import { normalizeEmail, normalizePhone } from "@/lib/lead-engine/extraction/normalize"
 import { createActivity } from "@/lib/crm/activities"
+import { scoreLead } from "@/lib/lead-engine/scoring/service"
 
 export const SCRAPER_SOURCE = "SCRAPER"
 export const LEAD_SOURCE_OPTIONS = ["MANUAL", "WEBSITE", "SCRAPER", "IMPORT", "REFERRAL", "OTHER"] as const
@@ -278,7 +279,7 @@ async function writeConversionActivity(orgId: string, actorId: string | undefine
 
 export async function convertCandidate(orgId: string, candidateId: string, actorId?: string): Promise<ConversionResult> {
   const candidate = await prisma.leadCandidate.findFirst({
-    where: { id: candidateId, { organizationId: orgId } },
+    where: { id: candidateId, organizationId: orgId },
     select: candidateSelect,
   })
   if (!candidate) return { ok: false, code: "CANDIDATE_NOT_FOUND", error: "Candidate not found in this organization" }
@@ -294,7 +295,7 @@ export async function convertCandidate(orgId: string, candidateId: string, actor
   if (candidate.status === CandidateStatus.DUPLICATE) {
     const canonicalId = await canonicalCandidateId(orgId, candidateId)
     if (!canonicalId) return { ok: false, code: "DUPLICATE_NOT_RESOLVED", error: "Duplicate candidate has no resolved canonical counterpart" }
-    const canon = await prisma.leadCandidate.findFirst({ where: { id: canonicalId, { organizationId: orgId } }, select: candidateSelect })
+    const canon = await prisma.leadCandidate.findFirst({ where: { id: canonicalId, organizationId: orgId }, select: candidateSelect })
     if (!canon) return { ok: false, code: "DUPLICATE_NOT_RESOLVED", error: "Canonical candidate not found" }
     const canonExisting = canon.conversions[0]
     if (canonExisting?.status === ConversionStatus.CONVERTED) {
@@ -408,6 +409,14 @@ export async function convertCandidate(orgId: string, candidateId: string, actor
       await writeConversionActivity(orgId, actorId, sourceCandidate, leadId, tx)
       return { conversion: { id: conversion.id, companyId, contactId, leadId, candidateId: candidate.id }, companyAction, contactAction }
     })
+    // TASK 012 §20: a converted candidate becomes a CRM lead — score it.
+    if (result.conversion.leadId) {
+      try {
+        await scoreLead(orgId, result.conversion.leadId, { actor: actorId ? { id: actorId, name: "" } : null })
+      } catch (e) {
+        console.log(`scoring.conversion.failed leadId=${result.conversion.leadId} error=${e instanceof Error ? e.message : "unknown"}`)
+      }
+    }
     return {
       ok: true,
       conversion: { id: result.conversion.id, status: ConversionStatus.CONVERTED, companyId: result.conversion.companyId, contactId: result.conversion.contactId, leadId: result.conversion.leadId, candidateId: candidate.id },
@@ -467,7 +476,7 @@ export interface PreviewPlan {
 
 export async function previewCandidate(orgId: string, candidateId: string): Promise<PreviewPlan> {
   const candidate = await prisma.leadCandidate.findFirst({
-    where: { id: candidateId, { organizationId: orgId } },
+    where: { id: candidateId, organizationId: orgId },
     select: candidateSelect,
   })
   if (!candidate) return { candidateId, status: "BLOCKED", company: { action: "BLOCKED" }, contact: { action: "NONE" }, lead: { action: "REUSE" }, error: "Candidate not found" }
@@ -483,7 +492,7 @@ export async function previewCandidate(orgId: string, candidateId: string): Prom
   if (candidate.status === CandidateStatus.DUPLICATE) {
     const canonicalId = await canonicalCandidateId(orgId, candidateId)
     if (!canonicalId) return { candidateId, status: "BLOCKED", company: { action: "BLOCKED" }, contact: { action: "NONE" }, lead: { action: "REUSE" }, error: "Duplicate candidate without canonical counterpart" }
-    const canonical = await prisma.leadCandidate.findFirst({ where: { id: canonicalId, { organizationId: orgId } }, select: candidateSelect })
+    const canonical = await prisma.leadCandidate.findFirst({ where: { id: canonicalId, organizationId: orgId }, select: candidateSelect })
     if (!canonical) return { candidateId, status: "BLOCKED", company: { action: "BLOCKED" }, contact: { action: "NONE" }, lead: { action: "REUSE" }, error: "Canonical candidate not found" }
     resolved = canonical
   }

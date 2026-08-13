@@ -31,7 +31,7 @@ export async function createStage(orgId: string, input: PipelineStageInput) {
 }
 
 export async function updateStage(orgId: string, id: string, input: Partial<PipelineStageInput>) {
-  const existing = await prisma.pipelineStage.findFirst({ where: { id, { organizationId: orgId } } })
+  const existing = await prisma.pipelineStage.findFirst({ where: { id, organizationId: orgId } })
   if (!existing) return null
   const { ...data } = input
   if (input.slug === "" || input.slug === undefined) delete data.slug
@@ -40,7 +40,7 @@ export async function updateStage(orgId: string, id: string, input: Partial<Pipe
 
 export async function deleteStage(orgId: string, id: string) {
   try {
-    const result = await prisma.pipelineStage.deleteMany({ where: { id, { organizationId: orgId } } })
+    const result = await prisma.pipelineStage.deleteMany({ where: { id, organizationId: orgId } })
     return result.count > 0
   } catch {
     throw new Error("Stage cannot be deleted while deals reference it")

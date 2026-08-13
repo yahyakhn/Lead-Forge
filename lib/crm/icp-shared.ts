@@ -3,6 +3,25 @@ export interface RangeValue {
   max?: number
 }
 
+// TASK 012: lead-scoring configuration stored alongside the scraping criteria.
+export interface ICPScoringConfig {
+  keywords: string[]
+  jobTitles: string[]
+  seniorities: string[]
+  domains: string[]
+  weights: {
+    industry: number
+    companySize: number
+    location: number
+    title: number
+    keyword: number
+    domain: number
+    quality: number
+  }
+  thresholds: { hot: number; good: number; maybe: number }
+  unknownCredit: number
+}
+
 export interface ICPCriteria {
   industries: string[]
   countries: string[]
@@ -20,6 +39,7 @@ export interface ICPCriteria {
     companyTypes: string[]
     keywords: string[]
   }
+  scoring: ICPScoringConfig | null
 }
 
 export const SUPPORTED_CURRENCIES = ["USD", "EUR", "GBP", "INR"] as const
@@ -98,6 +118,21 @@ export function normalizeCriteria(input: {
   excludeCountries?: string[]
   excludeCompanyTypes?: string[]
   excludeKeywords?: string[]
+  scoringKeywords?: string[]
+  scoringJobTitles?: string[]
+  scoringSeniorities?: string[]
+  scoringDomains?: string[]
+  scoringWeightIndustry?: number
+  scoringWeightCompanySize?: number
+  scoringWeightLocation?: number
+  scoringWeightTitle?: number
+  scoringWeightKeyword?: number
+  scoringWeightDomain?: number
+  scoringWeightQuality?: number
+  scoringThresholdHot?: number
+  scoringThresholdGood?: number
+  scoringThresholdMaybe?: number
+  scoringUnknownCredit?: number
 }): ICPCriteria {
   return {
     industries: cleanList(input.industries ?? []),
@@ -119,6 +154,47 @@ export function normalizeCriteria(input: {
       companyTypes: cleanList(input.excludeCompanyTypes ?? []),
       keywords: cleanList(input.excludeKeywords ?? []),
     },
+    scoring: normalizeScoringConfig(input),
+  }
+}
+
+export function normalizeScoringConfig(input: {
+  scoringKeywords?: string[]
+  scoringJobTitles?: string[]
+  scoringSeniorities?: string[]
+  scoringDomains?: string[]
+  scoringWeightIndustry?: number
+  scoringWeightCompanySize?: number
+  scoringWeightLocation?: number
+  scoringWeightTitle?: number
+  scoringWeightKeyword?: number
+  scoringWeightDomain?: number
+  scoringWeightQuality?: number
+  scoringThresholdHot?: number
+  scoringThresholdGood?: number
+  scoringThresholdMaybe?: number
+  scoringUnknownCredit?: number
+}): ICPScoringConfig {
+  return {
+    keywords: cleanList(input.scoringKeywords ?? []),
+    jobTitles: cleanList(input.scoringJobTitles ?? []),
+    seniorities: cleanList(input.scoringSeniorities ?? []),
+    domains: cleanList(input.scoringDomains ?? []),
+    weights: {
+      industry: input.scoringWeightIndustry ?? 20,
+      companySize: input.scoringWeightCompanySize ?? 20,
+      location: input.scoringWeightLocation ?? 10,
+      title: input.scoringWeightTitle ?? 20,
+      keyword: input.scoringWeightKeyword ?? 10,
+      domain: input.scoringWeightDomain ?? 10,
+      quality: input.scoringWeightQuality ?? 10,
+    },
+    thresholds: {
+      hot: input.scoringThresholdHot ?? 80,
+      good: input.scoringThresholdGood ?? 60,
+      maybe: input.scoringThresholdMaybe ?? 40,
+    },
+    unknownCredit: input.scoringUnknownCredit ?? 40,
   }
 }
 

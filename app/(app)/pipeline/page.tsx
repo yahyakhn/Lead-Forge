@@ -22,7 +22,7 @@ export default async function PipelinePage() {
   try {
     for (const stage of stages) {
       const leads = await prisma.lead.findMany({
-        where: { { organizationId: orgId }, status: stage.slug.toUpperCase() as LeadStatus },
+        where: { organizationId: orgId, status: stage.slug.toUpperCase() as LeadStatus },
         select: {
           id: true,
           score: true,

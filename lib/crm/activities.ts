@@ -26,7 +26,7 @@ export async function createActivity(orgId: string, input: ActivityInput, create
 }
 
 export async function getActivity(orgId: string, id: string) {
-  return prisma.activity.findFirst({ where: { id, { organizationId: orgId } }, include: ACTIVITY_INCLUDE })
+  return prisma.activity.findFirst({ where: { id, organizationId: orgId }, include: ACTIVITY_INCLUDE })
 }
 
 export interface ActivityFilters {
@@ -40,7 +40,7 @@ export interface ActivityFilters {
 export async function listActivities(orgId: string, filters: ActivityFilters) {
   const { page, pageSize } = parsePagination(filters)
   const where: Prisma.ActivityWhereInput = {
-    { organizationId: orgId },
+    organizationId: orgId,
     ...(filters.leadId ? { leadId: filters.leadId } : {}),
     ...(filters.companyId ? { companyId: filters.companyId } : {}),
     ...(filters.contactId ? { contactId: filters.contactId } : {}),
@@ -53,21 +53,21 @@ export async function listActivities(orgId: string, filters: ActivityFilters) {
 }
 
 export async function deleteActivity(orgId: string, id: string): Promise<boolean> {
-  const result = await prisma.activity.deleteMany({ where: { id, { organizationId: orgId } } })
+  const result = await prisma.activity.deleteMany({ where: { id, organizationId: orgId } })
   return result.count > 0
 }
 
 async function requireRefs(orgId: string, input: ActivityInput, db: Prisma.TransactionClient) {
   if (input.leadId) {
-    const lead = await db.lead.findFirst({ where: { id: input.leadId, { organizationId: orgId } } })
+    const lead = await db.lead.findFirst({ where: { id: input.leadId, organizationId: orgId } })
     if (!lead) throw new Error("Lead does not exist in this organization")
   }
   if (input.companyId) {
-    const company = await db.company.findFirst({ where: { id: input.companyId, { organizationId: orgId } } })
+    const company = await db.company.findFirst({ where: { id: input.companyId, organizationId: orgId } })
     if (!company) throw new Error("Company does not exist in this organization")
   }
   if (input.contactId) {
-    const contact = await db.contact.findFirst({ where: { id: input.contactId, { organizationId: orgId } } })
+    const contact = await db.contact.findFirst({ where: { id: input.contactId, organizationId: orgId } })
     if (!contact) throw new Error("Contact does not exist in this organization")
   }
 }

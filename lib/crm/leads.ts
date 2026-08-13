@@ -4,6 +4,7 @@ import { parsePagination } from "@/lib/crm/pagination"
 import type { Prisma } from "@/generated/prisma/client"
 import type { LeadStatus, LeadPriority } from "@/generated/prisma/client"
 import { createActivity } from "@/lib/crm/activities"
+import { scoreLead } from "@/lib/lead-engine/scoring/service"
 
 const LEAD_INCLUDE = {
   company: { select: { id: true, name: true, domain: true } },
@@ -12,18 +13,31 @@ const LEAD_INCLUDE = {
   sourceCandidate: { select: { id: true, companyName: true, contactFullName: true, runId: true } },
 } as const
 
+const LEAD_INCLUDE_WITH_SCORES = {
+  ...LEAD_INCLUDE,
+  scores: {
+    where: { scoreStatus: "CURRENT" },
+    take: 1,
+    orderBy: { scoredAt: "desc" },
+    select: { icpScore: true, overallScore: true, qualification: true, scoreBreakdown: true, reasons: true, scoreStatus: true, modelVersion: true, scoredAt: true, icpProfileId: true },
+  },
+} as const
+
 export const LEAD_SOURCE_OPTIONS = ["MANUAL", "WEBSITE", "SCRAPER", "IMPORT", "REFERRAL"] as const
 
 export async function createLead(orgId: string, input: LeadInput) {
   await requireCompany(orgId, input.companyId)
   await requireContact(orgId, input.contactId)
   await requireOwner(orgId, input.ownerId)
-  return prisma.lead.create({ data: toData(orgId, input), include: LEAD_INCLUDE })
+  const lead = await prisma.lead.create({ data: toData(orgId, input), include: LEAD_INCLUDE })
+  // TASK 012 §20: new CRM leads get scored when an active ICP exists.
+  await scoreLead(orgId, lead.id, { actor: null }).catch(() => null)
+  return lead
 }
 
 export async function getLead(orgId: string, id: string) {
   return prisma.lead.findFirst({
-    where: { id, { organizationId: orgId } },
+    where: { id, organizationId: orgId },
     include: LEAD_INCLUDE,
   })
 }
@@ -46,7 +60,7 @@ export async function listLeads(orgId: string, filters: LeadFilters) {
   const { page, pageSize } = parsePagination(filters)
   const search = filters.search?.trim()
   const where: Prisma.LeadWhereInput = {
-    { organizationId: orgId },
+    organizationId: orgId,
     ...(filters.status ? { status: filters.status as LeadStatus } : {}),
     ...(filters.priority ? { priority: filters.priority as LeadPriority } : {}),
     ...(filters.ownerId ? { ownerId: filters.ownerId } : {}),
@@ -67,7 +81,7 @@ export async function listLeads(orgId: string, filters: LeadFilters) {
   }
   const [total, data] = await Promise.all([
     prisma.lead.count({ where }),
-    prisma.lead.findMany({ where, include: LEAD_INCLUDE, orderBy: { createdAt: "desc" }, skip: (page - 1) * pageSize, take: pageSize }),
+    prisma.lead.findMany({ where, include: LEAD_INCLUDE_WITH_SCORES, orderBy: { createdAt: "desc" }, skip: (page - 1) * pageSize, take: pageSize }),
   ])
   return { data, page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) }
 }
@@ -93,19 +107,19 @@ export async function updateLead(orgId: string, id: string, input: Partial<LeadI
 }
 
 export async function deleteLead(orgId: string, id: string): Promise<boolean> {
-  const result = await prisma.lead.deleteMany({ where: { id, { organizationId: orgId } } })
+  const result = await prisma.lead.deleteMany({ where: { id, organizationId: orgId } })
   return result.count > 0
 }
 
 async function requireCompany(orgId: string, companyId?: string) {
   if (!companyId) return
-  const company = await prisma.company.findFirst({ where: { id: companyId, { organizationId: orgId } } })
+  const company = await prisma.company.findFirst({ where: { id: companyId, organizationId: orgId } })
   if (!company) throw new Error("Company does not exist in this organization")
 }
 
 async function requireContact(orgId: string, contactId?: string) {
   if (!contactId) return
-  const contact = await prisma.contact.findFirst({ where: { id: contactId, { organizationId: orgId } } })
+  const contact = await prisma.contact.findFirst({ where: { id: contactId, organizationId: orgId } })
   if (!contact) throw new Error("Contact does not exist in this organization")
 }
 

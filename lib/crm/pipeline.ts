@@ -49,8 +49,8 @@ export async function listStages(orgId: string) {
 
 export async function moveLeadToStage(orgId: string, leadId: string, stageId: string, userId?: string) {
   const [stage, lead] = await Promise.all([
-    prisma.pipelineStage.findFirst({ where: { id: stageId, { organizationId: orgId } } }),
-    prisma.lead.findFirst({ where: { id: leadId, { organizationId: orgId } } }),
+    prisma.pipelineStage.findFirst({ where: { id: stageId, organizationId: orgId } }),
+    prisma.lead.findFirst({ where: { id: leadId, organizationId: orgId } }),
   ])
   if (!stage) throw new Error("Pipeline stage does not exist in this organization")
   if (!lead) throw new Error("Lead does not exist in this organization")

@@ -49,6 +49,10 @@ const validInput: IcpInput = {
   excludeCountries: [],
   excludeCompanyTypes: [],
   excludeKeywords: [],
+  scoringKeywords: [],
+  scoringJobTitles: [],
+  scoringSeniorities: [],
+  scoringDomains: [],
 }
 
 afterAll(async () => {

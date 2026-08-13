@@ -89,7 +89,7 @@ async function bucketCandidates(orgId: string, candidate: CandidateRow): Promise
 
 function loadCandidate(orgId: string, candidateId: string) {
   return prisma.leadCandidate.findFirst({
-    where: { id: candidateId, { organizationId: orgId } },
+    where: { id: candidateId, organizationId: orgId },
     select: CANDIDATE_SELECT,
   })
 }

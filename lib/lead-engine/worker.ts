@@ -34,7 +34,7 @@ export async function executeRun(runId: string): Promise<void> {
     console.log(`scraper.run.started runId=${runId}`)
 
     const orgId = run.organizationId
-    const source = await prisma.leadSource.findFirst({ where: { id: run.sourceId, { organizationId: orgId } } })
+    const source = await prisma.leadSource.findFirst({ where: { id: run.sourceId, organizationId: orgId } })
     if (!source) throw new Error("Source not found")
     const adapter = getAdapterForType(source.type)
     if (!adapter) throw new Error(`No adapter available for source type ${source.type}`)

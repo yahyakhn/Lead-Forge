@@ -8,11 +8,11 @@
   "requestMaxDurationMillis": 0,
   "requestTotalFailedDurationMillis": 4,
   "requestTotalFinishedDurationMillis": 0,
-  "crawlerStartedAt": "2026-08-10T23:20:42.703Z",
-  "crawlerFinishedAt": "2026-08-10T23:20:42.742Z",
-  "statsPersistedAt": "2026-08-10T23:20:42.742Z",
+  "crawlerStartedAt": "2026-08-13T11:21:09.353Z",
+  "crawlerFinishedAt": "2026-08-13T11:21:09.391Z",
+  "statsPersistedAt": "2026-08-13T11:21:09.391Z",
   "crawlerRuntimeMillis": 48,
-  "crawlerLastStartTimestamp": 1786404042694,
+  "crawlerLastStartTimestamp": 1786620069343,
   "requestRetryHistogram": [
     1
   ],

@@ -166,9 +166,12 @@ model Organization {
   duplicateGroups          DuplicateGroup[]
   duplicateGroupMembers    DuplicateGroupMember[]
   duplicateAuditEvents     DuplicateAuditEvent[]
+  leadCandidateConversions LeadCandidateConversion[]
+  leadScores               LeadScore[]
+  leadScoreJobs            LeadScoreJob[]
+  scoringAuditEvents       ScoringAuditEvent[]
   createdAt                DateTime                  @default(now())
   updatedAt                DateTime                  @updatedAt
-  leadCandidateConversions LeadCandidateConversion[]
 }
 
 model Session {
@@ -276,6 +279,7 @@ model Lead {
   lists                LeadListMembership[]
   activities           Activity[]
   deals                Deal[]
+  scores               LeadScore[]
   createdAt            DateTime                  @default(now())
   updatedAt            DateTime                  @updatedAt
   lastActivityAt       DateTime?
@@ -372,6 +376,8 @@ model ICPProfile {
   createdById    String?
   createdBy      User?        @relation("ICPCreator", fields: [createdById], references: [id], onDelete: SetNull)
   scraperRuns    ScraperRun[]
+  scores         LeadScore[]
+  scoreJobs      LeadScoreJob[]
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -621,6 +627,7 @@ model LeadCandidate {
   canonicalOfGroups    DuplicateGroup[]          @relation("canonicalOf")
   conversions          LeadCandidateConversion[]
   convertedLeads        Lead[]              @relation("CandidateConversionLead")
+  scores               LeadScore[]
   createdAt            DateTime                  @default(now())
   updatedAt            DateTime                  @updatedAt
 
@@ -800,4 +807,118 @@ model LeadCandidateConversion {
   @@index([organizationId, contactId])
   @@index([organizationId, leadId])
   @@index([organizationId, convertedAt])
+}
+
+// ── TASK 012: lead scoring + ICP qualification ────────────────────────────
+
+enum Qualification {
+  HOT
+  GOOD
+  MAYBE
+  LOW
+  UNQUALIFIED
+}
+
+enum ScoreSource {
+  CANDIDATE
+  CRM
+}
+
+enum ScoreStatus {
+  CURRENT
+  STALE
+}
+
+enum LeadScoreJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum ScoringAuditAction {
+  ICP_CREATED
+  ICP_UPDATED
+  ICP_ACTIVATED
+  ICP_DEACTIVATED
+  LEAD_SCORED
+  LEAD_RESCORED
+  BULK_SCORING_STARTED
+  BULK_SCORING_COMPLETED
+}
+
+// Append-only scoring history. One row per scoring event; the newest row
+// with scoreStatus CURRENT is the authoritative score (§16-§19, §61-§65).
+model LeadScore {
+  id             String        @id @default(cuid())
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  leadId         String?
+  lead           Lead?         @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  candidateId    String?
+  candidate      LeadCandidate? @relation(fields: [candidateId], references: [id], onDelete: SetNull)
+  icpProfileId   String?
+  icpProfile     ICPProfile?   @relation(fields: [icpProfileId], references: [id], onDelete: SetNull)
+  source         ScoreSource
+  modelVersion   String
+  icpScore       Int
+  overallScore   Int
+  qualification  Qualification
+  scoreStatus    ScoreStatus   @default(CURRENT)
+  scoreBreakdown Json
+  reasons        Json
+  scoredAt       DateTime      @default(now())
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([organizationId, leadId, scoreStatus])
+  @@index([organizationId, leadId, scoredAt])
+  @@index([organizationId, candidateId, scoreStatus])
+  @@index([organizationId, candidateId, scoredAt])
+  @@index([organizationId, icpProfileId])
+  @@index([organizationId, qualification, scoreStatus])
+  @@index([organizationId, overallScore, scoreStatus])
+  @@index([organizationId, scoreStatus])
+  @@index([organizationId, scoredAt])
+}
+
+// Bulk scoring job with observable progress (§59-§60).
+model LeadScoreJob {
+  id             String             @id @default(cuid())
+  organizationId String
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  icpProfileId   String?
+  icpProfile     ICPProfile?        @relation(fields: [icpProfileId], references: [id], onDelete: SetNull)
+  candidateIds   Json?
+  status         LeadScoreJobStatus @default(PENDING)
+  total          Int                @default(0)
+  processed      Int                @default(0)
+  scored         Int                @default(0)
+  failed         Int                @default(0)
+  hot            Int                @default(0)
+  good           Int                @default(0)
+  maybe          Int                @default(0)
+  low            Int                @default(0)
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@index([organizationId, status])
+  @@index([organizationId, createdAt])
+}
+
+// TASK 012 audit trail (§58): ICP lifecycle + scoring events.
+model ScoringAuditEvent {
+  id             String            @id @default(cuid())
+  organizationId String
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  action         ScoringAuditAction
+  actorUserId    String?
+  actorName      String?
+  details        Json?
+  createdAt      DateTime          @default(now())
+
+  @@index([organizationId, action, createdAt])
+  @@index([organizationId, createdAt])
 }

@@ -33,7 +33,7 @@ export async function createDeal(orgId: string, input: DealInput) {
 }
 
 export async function getDeal(orgId: string, id: string) {
-  return prisma.deal.findFirst({ where: { id, { organizationId: orgId } }, include: DEAL_INCLUDE })
+  return prisma.deal.findFirst({ where: { id, organizationId: orgId }, include: DEAL_INCLUDE })
 }
 
 export interface DealFilters {
@@ -47,7 +47,7 @@ export interface DealFilters {
 export async function listDeals(orgId: string, filters: DealFilters) {
   const { page, pageSize } = parsePagination(filters)
   const where = {
-    { organizationId: orgId },
+    organizationId: orgId,
     ...(filters.stageId ? { stageId: filters.stageId } : {}),
     ...(filters.leadId ? { leadId: filters.leadId } : {}),
     ...(filters.companyId ? { companyId: filters.companyId } : {}),
@@ -70,24 +70,24 @@ export async function updateDeal(orgId: string, id: string, input: Partial<DealI
 }
 
 export async function deleteDeal(orgId: string, id: string): Promise<boolean> {
-  const result = await prisma.deal.deleteMany({ where: { id, { organizationId: orgId } } })
+  const result = await prisma.deal.deleteMany({ where: { id, organizationId: orgId } })
   return result.count > 0
 }
 
 async function requireStage(orgId: string, stageId: string) {
-  const stage = await prisma.pipelineStage.findFirst({ where: { id: stageId, { organizationId: orgId } } })
+  const stage = await prisma.pipelineStage.findFirst({ where: { id: stageId, organizationId: orgId } })
   if (!stage) throw new Error("Pipeline stage does not exist in this organization")
 }
 
 async function requireLead(orgId: string, leadId?: string) {
   if (!leadId) return
-  const lead = await prisma.lead.findFirst({ where: { id: leadId, { organizationId: orgId } } })
+  const lead = await prisma.lead.findFirst({ where: { id: leadId, organizationId: orgId } })
   if (!lead) throw new Error("Lead does not exist in this organization")
 }
 
 async function requireCompany(orgId: string, companyId?: string) {
   if (!companyId) return
-  const company = await prisma.company.findFirst({ where: { id: companyId, { organizationId: orgId } } })
+  const company = await prisma.company.findFirst({ where: { id: companyId, organizationId: orgId } })
   if (!company) throw new Error("Company does not exist in this organization")
 }
 
