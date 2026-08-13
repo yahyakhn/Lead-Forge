@@ -26,6 +26,8 @@ import {
   TrophyIcon,
   AlertTriangleIcon,
   SparklesIcon,
+  MailIcon,
+  ShieldCheckIcon,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 
@@ -268,6 +270,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     { label: "Needs review", value: data.cards.needsReview, icon: RadioIcon, href: "/lead-engine/candidates?status=REVIEW", hint: "now" },
     { label: "Active runs", value: data.cards.activeRuns, icon: ActivityIcon, href: "/scrapers/runs", hint: "queued or running" },
     { label: "Pages crawled", value: data.cards.pages, icon: GaugeIcon, href: "/scrapers/runs" },
+    { label: "Emails found", value: data.cards.emailsFound, icon: MailIcon, href: "/lead-engine/email/discovery", hint: "all time" },
+    { label: "Emails verified", value: data.cards.emailsVerified, icon: ShieldCheckIcon, href: "/lead-engine/email/verification", hint: data.cards.emailConflicts > 0 ? `${data.cards.emailConflicts} conflicts open` : "all time" },
   ]
 
   const ranges = [

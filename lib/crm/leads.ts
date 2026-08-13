@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db"
 import type { LeadInput } from "@/lib/crm/validators"
 import { parsePagination } from "@/lib/crm/pagination"
 import type { Prisma } from "@/generated/prisma/client"
-import type { LeadStatus, LeadPriority } from "@/generated/prisma/client"
+import type { LeadStatus, LeadPriority, EmailStatus } from "@/generated/prisma/client"
 import { createActivity } from "@/lib/crm/activities"
 import { scoreLead } from "@/lib/lead-engine/scoring/service"
 
@@ -54,6 +54,9 @@ export interface LeadFilters {
   maxScore?: number
   search?: string
   source?: string
+  emailStatus?: string
+  hasEmail?: boolean
+  sortBy?: string
 }
 
 export async function listLeads(orgId: string, filters: LeadFilters) {
@@ -69,6 +72,12 @@ export async function listLeads(orgId: string, filters: LeadFilters) {
     ...(filters.contactId ? { contactId: filters.contactId } : {}),
     ...(filters.minScore !== undefined ? { score: { gte: filters.minScore } } : {}),
     ...(filters.maxScore !== undefined ? { score: { lte: filters.maxScore } } : {}),
+    ...(filters.emailStatus
+      ? filters.emailStatus === "STALE"
+        ? { emailAddresses: { some: { status: { in: ["VERIFIED", "LIKELY_VALID"] }, expiresAt: { lt: new Date() } } } }
+        : { emailAddresses: { some: { status: { equals: filters.emailStatus as EmailStatus } } } }
+      : {}),
+    ...(filters.hasEmail ? { emailAddresses: { some: {} } } : {}),
     ...(search
       ? {
           OR: [
@@ -81,7 +90,13 @@ export async function listLeads(orgId: string, filters: LeadFilters) {
   }
   const [total, data] = await Promise.all([
     prisma.lead.count({ where }),
-    prisma.lead.findMany({ where, include: LEAD_INCLUDE_WITH_SCORES, orderBy: { createdAt: "desc" }, skip: (page - 1) * pageSize, take: pageSize }),
+    prisma.lead.findMany({
+      where,
+      include: LEAD_INCLUDE_WITH_SCORES,
+      orderBy: filters.sortBy === "readiness" ? { contactReadiness: "desc" } : { createdAt: "desc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
   ])
   return { data, page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) }
 }

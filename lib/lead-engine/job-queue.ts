@@ -2,6 +2,11 @@ import { executeRun } from "@/lib/lead-engine/worker"
 import { runExtractionJob } from "@/lib/lead-engine/extraction/service"
 import { runScoringJob } from "@/lib/lead-engine/scoring/service"
 import { runEnrichmentJob } from "@/lib/lead-engine/enrichment/service"
+import {
+  runEmailDiscoveryJob,
+  runEmailVerificationBatch,
+  runEmailVerificationJob,
+} from "@/lib/lead-engine/email/service"
 
 // In-process development queue. Runs are executed shortly after enqueue in
 // this process; cancellation is honored because the worker re-checks the
@@ -44,6 +49,36 @@ export function enqueueEnrichmentJob(requestId: string): void {
       await runEnrichmentJob(requestId)
     } catch (e) {
       console.log(`enrichment.queue.error requestId=${requestId} error=${e instanceof Error ? e.message : "unknown"}`)
+    }
+  })
+}
+
+export function enqueueEmailDiscoveryJob(jobId: string): void {
+  setImmediate(async () => {
+    try {
+      await runEmailDiscoveryJob(jobId)
+    } catch (e) {
+      console.log(`email.discovery.queue.error jobId=${jobId} error=${e instanceof Error ? e.message : "unknown"}`)
+    }
+  })
+}
+
+export function enqueueEmailVerificationJob(jobId: string): void {
+  setImmediate(async () => {
+    try {
+      await runEmailVerificationJob(jobId)
+    } catch (e) {
+      console.log(`email.verification.queue.error jobId=${jobId} error=${e instanceof Error ? e.message : "unknown"}`)
+    }
+  })
+}
+
+export function enqueueEmailVerificationBatch(batchId: string): void {
+  setImmediate(async () => {
+    try {
+      await runEmailVerificationBatch(batchId)
+    } catch (e) {
+      console.log(`email.verification.batch.error batchId=${batchId} error=${e instanceof Error ? e.message : "unknown"}`)
     }
   })
 }

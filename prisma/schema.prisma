@@ -140,6 +140,10 @@ model User {
   convertedCandidates LeadCandidateConversion[] @relation("CandidateConverter")
   requestedEnrichments EnrichmentRequest[]       @relation("EnrichmentRequester")
   resolvedConflicts    EnrichmentConflict[]      @relation("ConflictResolver")
+  emailEvents          EmailEvent[]              @relation("EmailEventActor")
+  emailDiscoveryJobs   EmailDiscoveryJob[]       @relation("EmailDiscoveryRequester")
+  emailVerificationBatches EmailVerificationBatch[] @relation("EmailVerificationRequester")
+  resolvedEmailConflicts EmailConflict[]         @relation("EmailConflictResolver")
   createdAt            DateTime                  @default(now())
   updatedAt            DateTime                  @updatedAt
 }
@@ -177,6 +181,14 @@ model Organization {
   enrichmentResults        EnrichmentResult[]
   enrichmentConflicts      EnrichmentConflict[]
   enrichmentAuditEvents    EnrichmentAuditEvent[]
+  emailSettings            EmailSettings?
+  emailAddresses           EmailAddress[]
+  emailEvents              EmailEvent[]
+  emailConflicts           EmailConflict[]
+  emailDiscoveryJobs       EmailDiscoveryJob[]
+  emailVerificationJobs    EmailVerificationJob[]
+  emailVerificationBatches EmailVerificationBatch[]
+  leadReadinesses          LeadReadiness[]
   createdAt                DateTime                  @default(now())
   updatedAt                DateTime                  @updatedAt
 }
@@ -220,6 +232,7 @@ model Company {
   activities           Activity[]
   deals                Deal[]
   candidateConversions LeadCandidateConversion[]
+  emailAddresses       EmailAddress[]
   createdAt            DateTime                  @default(now())
   updatedAt            DateTime                  @updatedAt
   lastVerifiedAt       DateTime?
@@ -252,6 +265,7 @@ model Contact {
   leads                Lead[]
   candidateConversions LeadCandidateConversion[]
   activities           Activity[]
+  emailAddresses       EmailAddress[]
   createdAt            DateTime                  @default(now())
   updatedAt            DateTime                  @updatedAt
 
@@ -289,6 +303,11 @@ model Lead {
   scores               LeadScore[]
   enrichmentRequests   EnrichmentRequest[]        @relation("LeadEnrichmentRequests")
   enrichmentConflicts  EnrichmentConflict[]       @relation("LeadEnrichmentConflicts")
+  emailAddresses       EmailAddress[]
+  emailDiscoveryJobs   EmailDiscoveryJob[]        @relation("LeadEmailDiscoveryJobs")
+  leadReadinesses      LeadReadiness[]
+  contactReadiness     Int?
+  emailStatus          EmailStatus?
   createdAt            DateTime                  @default(now())
   updatedAt            DateTime                  @updatedAt
   lastActivityAt       DateTime?
@@ -639,6 +658,9 @@ model LeadCandidate {
   scores               LeadScore[]
   enrichmentRequests   EnrichmentRequest[]  @relation("CandidateEnrichmentRequests")
   enrichmentConflicts  EnrichmentConflict[] @relation("CandidateEnrichmentConflicts")
+  emailAddresses       EmailAddress[]
+  emailDiscoveryJobs   EmailDiscoveryJob[]  @relation("CandidateEmailDiscoveryJobs")
+  leadReadinesses      LeadReadiness[]
   createdAt            DateTime                  @default(now())
   updatedAt            DateTime                  @updatedAt
 
@@ -1118,4 +1140,310 @@ model EnrichmentAuditEvent {
 
   @@index([organizationId, action, createdAt])
   @@index([organizationId, createdAt])
+}
+
+// ── TASK 014: email discovery & verification ──────────────────────────────
+
+enum EmailType {
+  PERSONAL_BUSINESS
+  ROLE_BASED
+  GENERIC
+  UNKNOWN
+}
+
+// Lifecycle status of an email address. DISCOVERED ≠ VERIFIED (§2): an email
+// is never claimed deliverable without verification evidence.
+enum EmailStatus {
+  UNKNOWN
+  DISCOVERED
+  VERIFIED
+  LIKELY_VALID
+  INVALID
+  RISKY
+  DISPOSABLE
+  STALE
+  CONFLICT
+  REJECTED
+}
+
+enum EmailSourceType {
+  PUBLIC_WEBSITE
+  ENRICHMENT
+  USER_IMPORT
+  MANUAL
+  CRM
+  OTHER_PROVIDER
+}
+
+enum EmailDomainMatch {
+  DOMAIN_MATCH
+  GENERIC_DOMAIN
+  DOMAIN_MISMATCH
+  NOT_APPLICABLE
+}
+
+enum EmailDiscoveryJobStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  PARTIAL
+  FAILED
+  CANCELLED
+}
+
+enum EmailVerificationJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum EmailVerificationBatchStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  PARTIAL
+  FAILED
+}
+
+enum EmailConflictStatus {
+  OPEN
+  RESOLVED
+  DISMISSED
+}
+
+enum EmailConflictResolution {
+  KEEP_BOTH
+  ACCEPT_NEW
+  DISMISSED
+}
+
+enum EmailAuditAction {
+  EMAIL_DISCOVERY_REQUESTED
+  EMAIL_DISCOVERY_COMPLETED
+  EMAIL_DISCOVERY_FAILED
+  EMAIL_DISCOVERED
+  EMAIL_VERIFICATION_REQUESTED
+  EMAIL_VERIFICATION_COMPLETED
+  EMAIL_VERIFICATION_FAILED
+  EMAIL_MARKED_PRIMARY
+  EMAIL_CONFLICT_CREATED
+  EMAIL_CONFLICT_RESOLVED
+  EMAIL_MANUALLY_INVALIDATED
+  EMAIL_REMOVED
+  EMAIL_ACCEPTED
+  EMAIL_SETTINGS_UPDATED
+}
+
+// Organization-level email policy. Defaults read from env; admins may tune.
+model EmailSettings {
+  id                     String       @id @default(cuid())
+  organizationId         String       @unique
+  organization           Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  discoveryEnabled       Boolean      @default(true)
+  verificationEnabled    Boolean      @default(true)
+  enrichmentFallback     Boolean      @default(true)
+  verificationCacheDays  Int          @default(14)
+  discoveryFreshnessDays Int          @default(14)
+  batchMaxEmails         Int          @default(100)
+  discoveryRateLimit     Int          @default(60)
+  verificationRateLimit  Int          @default(120)
+  genericDomains         Json?
+  rolePrefixes           Json?
+  disposableDomains      Json?
+  enabledProviders       Json?
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+}
+
+// One row per discovered email address (company- or contact-level, §78).
+// Unique identity per (organization, normalized email, owner) — dedupe and
+// conflicts are resolved in the service layer.
+model EmailAddress {
+  id                 String             @id @default(cuid())
+  organizationId     String
+  organization       Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  leadId             String?
+  lead               Lead?              @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  candidateId        String?
+  candidate          LeadCandidate?     @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  companyId          String?
+  company            Company?           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  contactId          String?
+  contact            Contact?           @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  email              String
+  normalizedEmail    String
+  type               EmailType          @default(UNKNOWN)
+  status             EmailStatus        @default(DISCOVERED)
+  confidence         Float              @default(0.5)
+  isPrimary          Boolean            @default(false)
+  sourceType         EmailSourceType
+  provider           String
+  sourceUrl          String?
+  evidence           String?
+  observedAt         DateTime           @default(now())
+  domainMatch        EmailDomainMatch   @default(NOT_APPLICABLE)
+  verification       Json?
+  verifiedAt         DateTime?
+  expiresAt          DateTime?
+  createdById        String?
+events               EmailEvent[]
+  conflicts            EmailConflict[]
+  verificationJobs     EmailVerificationJob[]
+  createdAt            DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@unique([organizationId, normalizedEmail, leadId, candidateId, companyId, contactId])
+  @@index([organizationId, leadId])
+  @@index([organizationId, candidateId])
+  @@index([organizationId, companyId])
+  @@index([organizationId, contactId])
+  @@index([organizationId, normalizedEmail])
+  @@index([organizationId, status])
+  @@index([organizationId, type])
+  @@index([organizationId, isPrimary])
+  @@index([organizationId, verifiedAt])
+  @@index([organizationId, expiresAt])
+  @@index([organizationId, createdAt])
+}
+
+// Append-only email history AND audit trail in one table: org-scoped events
+// (emailId null) and per-email history (emailId set), §34 + §63.
+model EmailEvent {
+  id             String        @id @default(cuid())
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  emailId        String?
+  email          EmailAddress? @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  action         EmailAuditAction
+  actorUserId    String?
+  actor          User?         @relation("EmailEventActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorName      String?
+  details        Json?
+  createdAt      DateTime      @default(now())
+
+  @@index([organizationId, emailId, createdAt])
+  @@index([organizationId, action, createdAt])
+  @@index([organizationId, createdAt])
+}
+
+// A discovered address that differs from the current contact/lead primary —
+// never auto-replaces; surfaced for human resolution (§32, §35).
+model EmailConflict {
+  id               String                 @id @default(cuid())
+  organizationId   String
+  organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  emailId          String
+  email            EmailAddress           @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  existingEmail    String
+  discoveredEmail  String
+  status           EmailConflictStatus    @default(OPEN)
+  resolution       EmailConflictResolution?
+  resolvedById     String?
+  resolvedBy       User?                  @relation("EmailConflictResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  resolvedAt       DateTime?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  @@index([organizationId, status])
+  @@index([organizationId, emailId])
+}
+
+// One discovery job per (entity, provider) request; idempotent (§82).
+model EmailDiscoveryJob {
+  id                    String                  @id @default(cuid())
+  organizationId        String
+  organization          Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  leadId                String?
+  lead                  Lead?                   @relation("LeadEmailDiscoveryJobs", fields: [leadId], references: [id], onDelete: Cascade)
+  candidateId           String?
+  candidate             LeadCandidate?          @relation("CandidateEmailDiscoveryJobs", fields: [candidateId], references: [id], onDelete: Cascade)
+  providerId            String
+  status                EmailDiscoveryJobStatus @default(QUEUED)
+  forceRefresh          Boolean                 @default(false)
+  retries               Int                     @default(0)
+  requestedById         String?
+  requestedBy           User?                   @relation("EmailDiscoveryRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  requestedAt           DateTime                @default(now())
+  startedAt             DateTime?
+  completedAt           DateTime?
+  errorCode             String?
+  errorMessage          String?
+  emailsFound           Int                     @default(0)
+  enrichmentRequestId   String?
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+
+  @@index([organizationId, status])
+  @@index([organizationId, leadId, createdAt])
+  @@index([organizationId, candidateId, createdAt])
+  @@index([organizationId, providerId, createdAt])
+  @@index([organizationId, createdAt])
+}
+
+// One verification job per email; failures stay isolated (§83).
+model EmailVerificationJob {
+  id             String                     @id @default(cuid())
+  organizationId String
+  organization   Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  emailId        String
+  email          EmailAddress               @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  batchId        String?
+  batch          EmailVerificationBatch?    @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  providerId     String
+  status         EmailVerificationJobStatus @default(PENDING)
+  errorCode      String?
+  errorMessage   String?
+  checkedAt      DateTime?
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+
+  @@index([organizationId, status])
+  @@index([organizationId, emailId])
+  @@index([organizationId, batchId])
+}
+
+// Bulk verification batch with observable progress (§84).
+model EmailVerificationBatch {
+  id             String                       @id @default(cuid())
+  organizationId String
+  organization   Organization                 @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  requestedById  String?
+  requestedBy    User?                        @relation("EmailVerificationRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  status         EmailVerificationBatchStatus @default(PENDING)
+  total          Int                          @default(0)
+  processed      Int                          @default(0)
+  verified       Int                          @default(0)
+  invalid        Int                          @default(0)
+  unknown        Int                          @default(0)
+  failed         Int                          @default(0)
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  jobs           EmailVerificationJob[]
+  createdAt      DateTime                     @default(now())
+  updatedAt      DateTime                     @updatedAt
+
+  @@index([organizationId, status])
+  @@index([organizationId, createdAt])
+}
+
+// Append-only contact readiness history (§71-§73). The newest row is the
+// authoritative score; Lead.contactReadiness mirrors it for fast sort/filter.
+model LeadReadiness {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  leadId         String?
+  lead           Lead?     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  candidateId    String?
+  candidate      LeadCandidate? @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  score          Int
+  modelVersion   String
+  breakdown      Json
+  reasons        Json
+  calculatedAt   DateTime  @default(now())
+  createdAt      DateTime  @default(now())
+
+  @@index([organizationId, leadId, calculatedAt])
+  @@index([organizationId, candidateId, calculatedAt])
 }

@@ -23,6 +23,7 @@ import { RescoreButton } from "@/components/crm/lead-engine/rescore-button"
 import { EnrichButton } from "@/components/crm/lead-engine/enrich-button"
 import { ResolveConflictButtons } from "@/components/crm/lead-engine/resolve-conflict-buttons"
 import { EnrichmentStatusBadge } from "@/components/crm/badges"
+import { EmailSection } from "@/components/crm/lead-engine/email-section"
 import { latestEntityRequest, listEntityResults, listEntityConflicts } from "@/lib/lead-engine/enrichment/service"
 import { FIELD_LABELS } from "@/lib/lead-engine/enrichment/fields"
 import { formatDateTime } from "@/lib/format"
@@ -250,6 +251,8 @@ export default async function LeadDetailPage({
               </div>
             ) : null}
           </section>
+
+          <EmailSection leadId={lead.id} />
 
           <section className="rounded-xl border bg-card p-4">
             <h2 className="mb-3 text-sm font-semibold">Provenance</h2>

@@ -66,6 +66,9 @@ export interface DashboardData {
     needsReview: number
     activeRuns: number
     pages: number
+    emailsFound: number
+    emailsVerified: number
+    emailConflicts: number
   }
   funnel: Array<{ stage: string; count: number; pctOfPrev: number | null }>
   sources: Array<{
@@ -282,6 +285,12 @@ const activity: DashboardData["activity"] = [
   const avgIcp = scoreDist[0]?._avg.icpScore ?? null
   const avgOverall = scoreDist[0]?._avg.overallScore ?? null
 
+  const [emailsFound, emailsVerified, emailConflicts] = await Promise.all([
+    prisma.emailAddress.count({ where: { organizationId: orgId } }),
+    prisma.emailAddress.count({ where: { organizationId: orgId, status: { in: ["VERIFIED", "LIKELY_VALID"] } } }),
+    prisma.emailConflict.count({ where: { organizationId: orgId, status: "OPEN" } }),
+  ])
+
   return {
     range,
     generatedAt: new Date(),
@@ -296,6 +305,9 @@ const activity: DashboardData["activity"] = [
       needsReview,
       activeRuns,
       pages: pagesCrawled,
+      emailsFound,
+      emailsVerified,
+      emailConflicts,
     },
     funnel,
     sources,

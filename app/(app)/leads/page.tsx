@@ -40,6 +40,9 @@ export default async function LeadsPage({
         source: first("source"),
         minScore: minScore ? Number(minScore) : undefined,
         maxScore: undefined,
+        emailStatus: first("emailStatus"),
+        hasEmail: first("hasEmail") === "true" ? true : undefined,
+        sortBy: first("sort"),
       }),
       listUsers(session.organization.id),
       listCompanyOptions(session.organization.id),
@@ -72,6 +75,24 @@ export default async function LeadsPage({
         <FilterSelect param="priority" placeholder="Priority" options={LEAD_PRIORITY_OPTIONS} />
         <FilterSelect param="owner" placeholder="Owner" options={ownerOptions} />
         <FilterSelect param="source" placeholder="Source" options={LEAD_SOURCE_OPTIONS.map((s) => ({ value: s, label: s }))} />
+        <FilterSelect param="emailStatus" placeholder="Email status" options={[
+          { value: "UNKNOWN", label: "Unknown" },
+          { value: "DISCOVERED", label: "Discovered" },
+          { value: "VERIFIED", label: "Verified" },
+          { value: "LIKELY_VALID", label: "Likely valid" },
+          { value: "INVALID", label: "Invalid" },
+          { value: "RISKY", label: "Risky" },
+          { value: "DISPOSABLE", label: "Disposable" },
+          { value: "STALE", label: "Stale" },
+        ]} />
+        <FilterSelect param="hasEmail" placeholder="Has email" options={[
+          { value: "true", label: "Has email" },
+          { value: "false", label: "No email" },
+        ]} />
+        <FilterSelect param="sort" placeholder="Sort" options={[
+          { value: "readiness", label: "Readiness score" },
+          { value: "newest", label: "Newest" },
+        ]} />
         <FilterSelect
           param="minScore"
           placeholder="Min score"

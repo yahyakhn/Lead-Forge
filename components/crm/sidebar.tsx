@@ -40,6 +40,8 @@ import {
   XIcon,
   SparklesIcon,
   SettingsIcon,
+  MailIcon,
+  ShieldCheckIcon,
 } from "lucide-react"
 
 interface NavItem {
@@ -66,6 +68,8 @@ const NAV: NavGroup[] = [
       { href: "/lead-engine/candidates", label: "Candidates", icon: RadarIcon },
       { href: "/lead-engine/duplicates", label: "Duplicates", icon: LayersIcon },
       { href: "/lead-engine/enrichment", label: "Enrichment", icon: SparklesIcon },
+      { href: "/lead-engine/email/discovery", label: "Email Discovery", icon: MailIcon },
+      { href: "/lead-engine/email/verification", label: "Email Verification", icon: ShieldCheckIcon },
     ],
   },
   {
@@ -79,7 +83,7 @@ const NAV: NavGroup[] = [
   },
   {
     section: "Settings",
-    items: [{ href: "/settings/enrichment", label: "Enrichment", icon: SettingsIcon }],
+    items: [{ href: "/settings/enrichment", label: "Enrichment", icon: SettingsIcon }, { href: "/settings/email", label: "Email", icon: MailIcon }],
   },
 ]
 

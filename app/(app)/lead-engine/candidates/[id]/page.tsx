@@ -18,6 +18,7 @@ import { PreviewScoreButton } from "@/components/crm/lead-engine/preview-score-b
 import { EnrichButton } from "@/components/crm/lead-engine/enrich-button"
 import { ResolveConflictButtons } from "@/components/crm/lead-engine/resolve-conflict-buttons"
 import { EnrichmentStatusBadge } from "@/components/crm/badges"
+import { EmailSection } from "@/components/crm/lead-engine/email-section"
 import { latestEntityRequest, listEntityResults, listEntityConflicts } from "@/lib/lead-engine/enrichment/service"
 import { FIELD_LABELS } from "@/lib/lead-engine/enrichment/fields"
 
@@ -253,6 +254,8 @@ export default async function CandidateDetailPage({ params }: { params: Promise<
           </div>
         ) : null}
       </div>
+
+      <EmailSection candidateId={candidate.id} />
 
       <div className="mb-4 grid gap-4 rounded-xl border bg-card p-5 lg:grid-cols-2">
         <div>
