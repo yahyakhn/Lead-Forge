@@ -203,7 +203,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
                 <EmptySection message="No scored leads available." />
               ) : (
                 <>
-                  <CategoryBars items={data.scoreDistribution} />
+                  <CategoryBars items={data.scoreDistribution.map((b) => ({ label: b.bucket, count: b.count }))} />
                   <div className="mt-3 border-t pt-3">
                     <p className="mb-1 text-xs text-muted-foreground">ICP qualification</p>
                     <div className="flex flex-wrap gap-1.5">
@@ -242,7 +242,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
               {data.signals.length === 0 ? (
                 <EmptySection message="No signals detected in this period." />
               ) : (
-                <CategoryBars items={data.signals} valueSuffix=" companies" />
+                <CategoryBars items={data.signals.map((s) => ({ label: s.signal, count: s.count }))} />
               )}
             </SectionCard>
           </div>

@@ -1,3 +1,64 @@
+model Playbook {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  status         String   @default("ACTIVE")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  playbookSteps PlaybookStep[]
+  playbookRuns  PlaybookRun[]
+
+  @@index([organizationId, status])
+  @@index([organizationId, createdAt])
+}
+
+model PlaybookStep {
+  id          String   @id @default(cuid())
+  playbookId  String
+  playbook    Playbook @relation(fields: [playbookId], references: [id])
+  title       String
+  description String?
+  position    Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([playbookId, position])
+  @@index([playbookId])
+}
+
+model PlaybookRun {
+  id               String            @id @default(cuid())
+  organizationId   String
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  playbookId       String
+  playbook         Playbook          @relation(fields: [playbookId], references: [id], onDelete: SetNull)
+  leadId           String?
+  lead             Lead?             @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  status           String            @default("ACTIVE")
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  playbookRunSteps PlaybookRunStep[]
+
+  @@index([organizationId, playbookId, leadId])
+  @@index([organizationId, status])
+}
+
+model PlaybookRunStep {
+  id             String      @id @default(cuid())
+  runId          String
+  run            PlaybookRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  playbookStepId String
+  completed      Boolean     @default(false)
+  completedAt    DateTime?
+  notes          String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@index([runId])
+}
+
 generator client {
   provider = "prisma-client"
   output   = "../generated/prisma"
@@ -124,31 +185,31 @@ enum ExtractionMethod {
 }
 
 model User {
-  id                  String                    @id @default(cuid())
-  email               String                    @unique
-  passwordHash        String
-  name                String
-  role                Role                      @default(MEMBER)
-  organizationId      String
-  organization        Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  sessions            Session[]
-  ownedLeads          Lead[]                    @relation("LeadOwner")
-  ownedDeals          Deal[]                    @relation("DealOwner")
-  createdActivities   Activity[]                @relation("ActivityCreator")
-  createdLists        LeadList[]                @relation("LeadListCreator")
-  createdICPs         ICPProfile[]              @relation("ICPCreator")
-  createdSources      LeadSource[]              @relation("LeadSourceCreator")
-  convertedCandidates LeadCandidateConversion[] @relation("CandidateConverter")
-  requestedEnrichments EnrichmentRequest[]       @relation("EnrichmentRequester")
-  resolvedConflicts    EnrichmentConflict[]      @relation("ConflictResolver")
-  emailEvents          EmailEvent[]              @relation("EmailEventActor")
-  emailDiscoveryJobs   EmailDiscoveryJob[]       @relation("EmailDiscoveryRequester")
-  emailVerificationBatches EmailVerificationBatch[] @relation("EmailVerificationRequester")
-  resolvedEmailConflicts EmailConflict[]         @relation("EmailConflictResolver")
-  emailTemplateCreated EmailTemplate[]           @relation("EmailTemplateCreator")
-  communicationsCreated Communication[]          @relation("CommunicationCreator")
-  createdAt            DateTime                  @default(now())
-  updatedAt            DateTime                  @updatedAt
+  id                       String                    @id @default(cuid())
+  email                    String                    @unique
+  passwordHash             String
+  name                     String
+  role                     Role                      @default(MEMBER)
+  organizationId           String
+  organization             Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sessions                 Session[]
+  ownedLeads               Lead[]                    @relation("LeadOwner")
+  ownedDeals               Deal[]                    @relation("DealOwner")
+  createdActivities        Activity[]                @relation("ActivityCreator")
+  createdLists             LeadList[]                @relation("LeadListCreator")
+  createdICPs              ICPProfile[]              @relation("ICPCreator")
+  createdSources           LeadSource[]              @relation("LeadSourceCreator")
+  convertedCandidates      LeadCandidateConversion[] @relation("CandidateConverter")
+  requestedEnrichments     EnrichmentRequest[]       @relation("EnrichmentRequester")
+  resolvedConflicts        EnrichmentConflict[]      @relation("ConflictResolver")
+  emailEvents              EmailEvent[]              @relation("EmailEventActor")
+  emailDiscoveryJobs       EmailDiscoveryJob[]       @relation("EmailDiscoveryRequester")
+  emailVerificationBatches EmailVerificationBatch[]  @relation("EmailVerificationRequester")
+  resolvedEmailConflicts   EmailConflict[]           @relation("EmailConflictResolver")
+  emailTemplateCreated     EmailTemplate[]           @relation("EmailTemplateCreator")
+  communicationsCreated    Communication[]           @relation("CommunicationCreator")
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
 }
 
 model Organization {
@@ -206,6 +267,7 @@ model Organization {
   emailWebhookEvents       EmailWebhookEvent[]
   createdAt                DateTime                  @default(now())
   updatedAt                DateTime                  @updatedAt
+  playbookRuns             PlaybookRun[]
 }
 
 model Session {
@@ -314,16 +376,16 @@ model Lead {
   candidateConversions LeadCandidateConversion[]
   source               String?
   sourceCandidateId    String?
-  sourceCandidate      LeadCandidate?  @relation("CandidateConversionLead", fields: [sourceCandidateId], references: [id], onDelete: SetNull)
+  sourceCandidate      LeadCandidate?            @relation("CandidateConversionLead", fields: [sourceCandidateId], references: [id], onDelete: SetNull)
   lists                LeadListMembership[]
   activities           Activity[]
   deals                Deal[]
   scores               LeadScore[]
   classifications      LeadClassification[]
-  enrichmentRequests   EnrichmentRequest[]        @relation("LeadEnrichmentRequests")
-  enrichmentConflicts  EnrichmentConflict[]       @relation("LeadEnrichmentConflicts")
+  enrichmentRequests   EnrichmentRequest[]       @relation("LeadEnrichmentRequests")
+  enrichmentConflicts  EnrichmentConflict[]      @relation("LeadEnrichmentConflicts")
   emailAddresses       EmailAddress[]
-  emailDiscoveryJobs   EmailDiscoveryJob[]        @relation("LeadEmailDiscoveryJobs")
+  emailDiscoveryJobs   EmailDiscoveryJob[]       @relation("LeadEmailDiscoveryJobs")
   leadReadinesses      LeadReadiness[]
   contactReadiness     Int?
   emailStatus          EmailStatus?
@@ -335,6 +397,7 @@ model Lead {
   createdAt            DateTime                  @default(now())
   updatedAt            DateTime                  @updatedAt
   lastActivityAt       DateTime?
+  playbookRuns         PlaybookRun[]
 
   @@index([organizationId, status])
   @@index([organizationId, score])
@@ -418,21 +481,21 @@ model PipelineStage {
 }
 
 model ICPProfile {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  name           String
-  description    String?
-  criteria       Json
-  isActive       Boolean      @default(false)
-  createdById    String?
-  createdBy      User?        @relation("ICPCreator", fields: [createdById], references: [id], onDelete: SetNull)
-  scraperRuns    ScraperRun[]
-  scores         LeadScore[]
-  scoreJobs      LeadScoreJob[]
+  id              String               @id @default(cuid())
+  organizationId  String
+  organization    Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name            String
+  description     String?
+  criteria        Json
+  isActive        Boolean              @default(false)
+  createdById     String?
+  createdBy       User?                @relation("ICPCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  scraperRuns     ScraperRun[]
+  scores          LeadScore[]
+  scoreJobs       LeadScoreJob[]
   classifications LeadClassification[]
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
 
   @@unique([organizationId, name])
   @@index([organizationId, isActive])
@@ -679,12 +742,12 @@ model LeadCandidate {
   duplicateMemberships DuplicateGroupMember[]
   canonicalOfGroups    DuplicateGroup[]          @relation("canonicalOf")
   conversions          LeadCandidateConversion[]
-  convertedLeads        Lead[]              @relation("CandidateConversionLead")
+  convertedLeads       Lead[]                    @relation("CandidateConversionLead")
   scores               LeadScore[]
-  enrichmentRequests   EnrichmentRequest[]  @relation("CandidateEnrichmentRequests")
-  enrichmentConflicts  EnrichmentConflict[] @relation("CandidateEnrichmentConflicts")
+  enrichmentRequests   EnrichmentRequest[]       @relation("CandidateEnrichmentRequests")
+  enrichmentConflicts  EnrichmentConflict[]      @relation("CandidateEnrichmentConflicts")
   emailAddresses       EmailAddress[]
-  emailDiscoveryJobs   EmailDiscoveryJob[]  @relation("CandidateEmailDiscoveryJobs")
+  emailDiscoveryJobs   EmailDiscoveryJob[]       @relation("CandidateEmailDiscoveryJobs")
   leadReadinesses      LeadReadiness[]
   createdAt            DateTime                  @default(now())
   updatedAt            DateTime                  @updatedAt
@@ -915,26 +978,26 @@ enum ScoringAuditAction {
 // Append-only scoring history. One row per scoring event; the newest row
 // with scoreStatus CURRENT is the authoritative score (§16-§19, §61-§65).
 model LeadScore {
-  id             String        @id @default(cuid())
+  id             String         @id @default(cuid())
   organizationId String
-  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   leadId         String?
-  lead           Lead?         @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  lead           Lead?          @relation(fields: [leadId], references: [id], onDelete: SetNull)
   candidateId    String?
   candidate      LeadCandidate? @relation(fields: [candidateId], references: [id], onDelete: SetNull)
   icpProfileId   String?
-  icpProfile     ICPProfile?   @relation(fields: [icpProfileId], references: [id], onDelete: SetNull)
+  icpProfile     ICPProfile?    @relation(fields: [icpProfileId], references: [id], onDelete: SetNull)
   source         ScoreSource
   modelVersion   String
   icpScore       Int
   overallScore   Int
   qualification  Qualification
-  scoreStatus    ScoreStatus   @default(CURRENT)
+  scoreStatus    ScoreStatus    @default(CURRENT)
   scoreBreakdown Json
   reasons        Json
-  scoredAt       DateTime      @default(now())
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  scoredAt       DateTime       @default(now())
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
   @@index([organizationId, leadId, scoreStatus])
   @@index([organizationId, leadId, scoredAt])
@@ -1021,14 +1084,14 @@ model AccountResearch {
 }
 
 model ScoringAuditEvent {
-  id             String            @id @default(cuid())
+  id             String             @id @default(cuid())
   organizationId String
-  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   action         ScoringAuditAction
   actorUserId    String?
   actorName      String?
   details        Json?
-  createdAt      DateTime          @default(now())
+  createdAt      DateTime           @default(now())
 
   @@index([organizationId, action, createdAt])
   @@index([organizationId, createdAt])
@@ -1112,32 +1175,32 @@ model EnrichmentSettings {
 
 // One enrichment job per (lead|candidate, provider) request.
 model EnrichmentRequest {
-  id             String                   @id @default(cuid())
+  id             String                  @id @default(cuid())
   organizationId String
-  organization   Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   leadId         String?
-  lead           Lead?                    @relation("LeadEnrichmentRequests", fields: [leadId], references: [id], onDelete: Cascade)
+  lead           Lead?                   @relation("LeadEnrichmentRequests", fields: [leadId], references: [id], onDelete: Cascade)
   candidateId    String?
-  candidate      LeadCandidate?           @relation("CandidateEnrichmentRequests", fields: [candidateId], references: [id], onDelete: Cascade)
+  candidate      LeadCandidate?          @relation("CandidateEnrichmentRequests", fields: [candidateId], references: [id], onDelete: Cascade)
   providerId     String
-  status         EnrichmentRequestStatus  @default(QUEUED)
-  forceRefresh   Boolean                  @default(false)
-  retries        Int                      @default(0)
+  status         EnrichmentRequestStatus @default(QUEUED)
+  forceRefresh   Boolean                 @default(false)
+  retries        Int                     @default(0)
   requestedById  String?
-  requestedBy    User?                    @relation("EnrichmentRequester", fields: [requestedById], references: [id], onDelete: SetNull)
-  requestedAt    DateTime                 @default(now())
+  requestedBy    User?                   @relation("EnrichmentRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  requestedAt    DateTime                @default(now())
   startedAt      DateTime?
   completedAt    DateTime?
   errorCode      EnrichmentErrorCode?
   errorMessage   String?
-  pagesVisited   Int                      @default(0)
-  fieldsFound    Int                      @default(0)
-  fieldsUpdated  Int                      @default(0)
-  conflictsCount Int                      @default(0)
+  pagesVisited   Int                     @default(0)
+  fieldsFound    Int                     @default(0)
+  fieldsUpdated  Int                     @default(0)
+  conflictsCount Int                     @default(0)
   results        EnrichmentResult[]
   conflicts      EnrichmentConflict[]
-  createdAt      DateTime                 @default(now())
-  updatedAt      DateTime                 @updatedAt
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
 
   @@index([organizationId, status])
   @@index([organizationId, leadId, createdAt])
@@ -1177,28 +1240,28 @@ model EnrichmentResult {
 // A conflicting pair: existing vs enriched. Resolved by a user; the
 // canonical entity value is only ever changed via resolution.
 model EnrichmentConflict {
-  id              String                  @id @default(cuid())
-  organizationId  String
-  organization    Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  requestId       String
-  request         EnrichmentRequest       @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  leadId          String?
-  lead            Lead?                   @relation("LeadEnrichmentConflicts", fields: [leadId], references: [id], onDelete: Cascade)
-  candidateId     String?
-  candidate       LeadCandidate?          @relation("CandidateEnrichmentConflicts", fields: [candidateId], references: [id], onDelete: Cascade)
-  field           String
-  existingValue   String
-  enrichedValue   String
-  existingSource  String
-  enrichedSource  String
-  confidence      Float
-  status          EnrichmentConflictStatus @default(OPEN)
-  resolution      ConflictResolution?
-  resolvedById    String?
-  resolvedBy      User?                   @relation("ConflictResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
-  resolvedAt      DateTime?
-  createdAt       DateTime                @default(now())
-  updatedAt       DateTime                @updatedAt
+  id             String                   @id @default(cuid())
+  organizationId String
+  organization   Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  requestId      String
+  request        EnrichmentRequest        @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  leadId         String?
+  lead           Lead?                    @relation("LeadEnrichmentConflicts", fields: [leadId], references: [id], onDelete: Cascade)
+  candidateId    String?
+  candidate      LeadCandidate?           @relation("CandidateEnrichmentConflicts", fields: [candidateId], references: [id], onDelete: Cascade)
+  field          String
+  existingValue  String
+  enrichedValue  String
+  existingSource String
+  enrichedSource String
+  confidence     Float
+  status         EnrichmentConflictStatus @default(OPEN)
+  resolution     ConflictResolution?
+  resolvedById   String?
+  resolvedBy     User?                    @relation("ConflictResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  resolvedAt     DateTime?
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
 
   @@index([organizationId, status])
   @@index([organizationId, leadId, status])
@@ -1369,39 +1432,39 @@ model EmailSettings {
 // Unique identity per (organization, normalized email, owner) — dedupe and
 // conflicts are resolved in the service layer.
 model EmailAddress {
-  id                 String             @id @default(cuid())
-  organizationId     String
-  organization       Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  leadId             String?
-  lead               Lead?              @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  candidateId        String?
-  candidate          LeadCandidate?     @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  companyId          String?
-  company            Company?           @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  contactId          String?
-  contact            Contact?           @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  email              String
-  normalizedEmail    String
-  type               EmailType          @default(UNKNOWN)
-  status             EmailStatus        @default(DISCOVERED)
-  confidence         Float              @default(0.5)
-  isPrimary          Boolean            @default(false)
-  sourceType         EmailSourceType
-  provider           String
-  sourceUrl          String?
-  evidence           String?
-  observedAt         DateTime           @default(now())
-  domainMatch        EmailDomainMatch   @default(NOT_APPLICABLE)
-  verification       Json?
-  verifiedAt         DateTime?
-  expiresAt          DateTime?
-  createdById        String?
-events               EmailEvent[]
-  conflicts            EmailConflict[]
-  verificationJobs     EmailVerificationJob[]
-  communications      Communication[]
-  createdAt           DateTime               @default(now())
-  updatedAt           DateTime               @updatedAt
+  id               String                 @id @default(cuid())
+  organizationId   String
+  organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  leadId           String?
+  lead             Lead?                  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  candidateId      String?
+  candidate        LeadCandidate?         @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  companyId        String?
+  company          Company?               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  contactId        String?
+  contact          Contact?               @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  email            String
+  normalizedEmail  String
+  type             EmailType              @default(UNKNOWN)
+  status           EmailStatus            @default(DISCOVERED)
+  confidence       Float                  @default(0.5)
+  isPrimary        Boolean                @default(false)
+  sourceType       EmailSourceType
+  provider         String
+  sourceUrl        String?
+  evidence         String?
+  observedAt       DateTime               @default(now())
+  domainMatch      EmailDomainMatch       @default(NOT_APPLICABLE)
+  verification     Json?
+  verifiedAt       DateTime?
+  expiresAt        DateTime?
+  createdById      String?
+  events           EmailEvent[]
+  conflicts        EmailConflict[]
+  verificationJobs EmailVerificationJob[]
+  communications   Communication[]
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
 
   @@unique([organizationId, normalizedEmail, leadId, candidateId, companyId, contactId])
   @@index([organizationId, leadId])
@@ -1420,17 +1483,17 @@ events               EmailEvent[]
 // Append-only email history AND audit trail in one table: org-scoped events
 // (emailId null) and per-email history (emailId set), §34 + §63.
 model EmailEvent {
-  id             String        @id @default(cuid())
+  id             String           @id @default(cuid())
   organizationId String
-  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   emailId        String?
-  email          EmailAddress? @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  email          EmailAddress?    @relation(fields: [emailId], references: [id], onDelete: Cascade)
   action         EmailAuditAction
   actorUserId    String?
-  actor          User?         @relation("EmailEventActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  actor          User?            @relation("EmailEventActor", fields: [actorUserId], references: [id], onDelete: SetNull)
   actorName      String?
   details        Json?
-  createdAt      DateTime      @default(now())
+  createdAt      DateTime         @default(now())
 
   @@index([organizationId, emailId, createdAt])
   @@index([organizationId, action, createdAt])
@@ -1440,20 +1503,20 @@ model EmailEvent {
 // A discovered address that differs from the current contact/lead primary —
 // never auto-replaces; surfaced for human resolution (§32, §35).
 model EmailConflict {
-  id               String                 @id @default(cuid())
-  organizationId   String
-  organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  emailId          String
-  email            EmailAddress           @relation(fields: [emailId], references: [id], onDelete: Cascade)
-  existingEmail    String
-  discoveredEmail  String
-  status           EmailConflictStatus    @default(OPEN)
-  resolution       EmailConflictResolution?
-  resolvedById     String?
-  resolvedBy       User?                  @relation("EmailConflictResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
-  resolvedAt       DateTime?
-  createdAt        DateTime               @default(now())
-  updatedAt        DateTime               @updatedAt
+  id              String                   @id @default(cuid())
+  organizationId  String
+  organization    Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  emailId         String
+  email           EmailAddress             @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  existingEmail   String
+  discoveredEmail String
+  status          EmailConflictStatus      @default(OPEN)
+  resolution      EmailConflictResolution?
+  resolvedById    String?
+  resolvedBy      User?                    @relation("EmailConflictResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  resolvedAt      DateTime?
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
 
   @@index([organizationId, status])
   @@index([organizationId, emailId])
@@ -1461,28 +1524,28 @@ model EmailConflict {
 
 // One discovery job per (entity, provider) request; idempotent (§82).
 model EmailDiscoveryJob {
-  id                    String                  @id @default(cuid())
-  organizationId        String
-  organization          Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  leadId                String?
-  lead                  Lead?                   @relation("LeadEmailDiscoveryJobs", fields: [leadId], references: [id], onDelete: Cascade)
-  candidateId           String?
-  candidate             LeadCandidate?          @relation("CandidateEmailDiscoveryJobs", fields: [candidateId], references: [id], onDelete: Cascade)
-  providerId            String
-  status                EmailDiscoveryJobStatus @default(QUEUED)
-  forceRefresh          Boolean                 @default(false)
-  retries               Int                     @default(0)
-  requestedById         String?
-  requestedBy           User?                   @relation("EmailDiscoveryRequester", fields: [requestedById], references: [id], onDelete: SetNull)
-  requestedAt           DateTime                @default(now())
-  startedAt             DateTime?
-  completedAt           DateTime?
-  errorCode             String?
-  errorMessage          String?
-  emailsFound           Int                     @default(0)
-  enrichmentRequestId   String?
-  createdAt             DateTime                @default(now())
-  updatedAt             DateTime                @updatedAt
+  id                  String                  @id @default(cuid())
+  organizationId      String
+  organization        Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  leadId              String?
+  lead                Lead?                   @relation("LeadEmailDiscoveryJobs", fields: [leadId], references: [id], onDelete: Cascade)
+  candidateId         String?
+  candidate           LeadCandidate?          @relation("CandidateEmailDiscoveryJobs", fields: [candidateId], references: [id], onDelete: Cascade)
+  providerId          String
+  status              EmailDiscoveryJobStatus @default(QUEUED)
+  forceRefresh        Boolean                 @default(false)
+  retries             Int                     @default(0)
+  requestedById       String?
+  requestedBy         User?                   @relation("EmailDiscoveryRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  requestedAt         DateTime                @default(now())
+  startedAt           DateTime?
+  completedAt         DateTime?
+  errorCode           String?
+  errorMessage        String?
+  emailsFound         Int                     @default(0)
+  enrichmentRequestId String?
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
 
   @@index([organizationId, status])
   @@index([organizationId, leadId, createdAt])
@@ -1540,19 +1603,19 @@ model EmailVerificationBatch {
 // Append-only contact readiness history (§71-§73). The newest row is the
 // authoritative score; Lead.contactReadiness mirrors it for fast sort/filter.
 model LeadReadiness {
-  id             String   @id @default(cuid())
+  id             String         @id @default(cuid())
   organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   leadId         String?
-  lead           Lead?     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  lead           Lead?          @relation(fields: [leadId], references: [id], onDelete: Cascade)
   candidateId    String?
   candidate      LeadCandidate? @relation(fields: [candidateId], references: [id], onDelete: Cascade)
   score          Int
   modelVersion   String
   breakdown      Json
   reasons        Json
-  calculatedAt   DateTime  @default(now())
-  createdAt      DateTime  @default(now())
+  calculatedAt   DateTime       @default(now())
+  createdAt      DateTime       @default(now())
 
   @@index([organizationId, leadId, calculatedAt])
   @@index([organizationId, candidateId, calculatedAt])
@@ -1649,16 +1712,16 @@ enum EmailSendErrorCode {
 // Sending identity. Provider secrets are never stored in the DB — they are
 // resolved from environment configuration at send time (§18, §19).
 model EmailAccount {
-  id             String            @id @default(cuid())
+  id             String             @id @default(cuid())
   organizationId String
-  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  provider       String            @default("smtp")
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  provider       String             @default("smtp")
   name           String
   email          String
   status         EmailAccountStatus @default(ACTIVE)
-  isDefault      Boolean           @default(false)
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
+  isDefault      Boolean            @default(false)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
 
   @@unique([organizationId, email])
   @@index([organizationId, status])
@@ -1666,19 +1729,19 @@ model EmailAccount {
 
 // Reusable outreach templates (§31-§37). Archived, never hard-deleted.
 model EmailTemplate {
-  id             String               @id @default(cuid())
+  id             String                @id @default(cuid())
   organizationId String
-  organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   name           String
   description    String?
   category       EmailTemplateCategory @default(GENERAL)
   subject        String
   body           String
-  status         EmailTemplateStatus  @default(ACTIVE)
+  status         EmailTemplateStatus   @default(ACTIVE)
   createdById    String?
-  createdBy      User?                @relation("EmailTemplateCreator", fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
+  createdBy      User?                 @relation("EmailTemplateCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
 
   @@unique([organizationId, name])
   @@index([organizationId, status, category, updatedAt])
@@ -1730,18 +1793,18 @@ model Communication {
 
 // Queue-backed sending (§69). One row per send attempt of a Communication.
 model OutboxMessage {
-  id              String       @id @default(cuid())
+  id              String        @id @default(cuid())
   organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  communicationId String       @unique
+  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  communicationId String        @unique
   communication   Communication @relation(fields: [communicationId], references: [id], onDelete: Cascade)
-  status          OutboxStatus @default(PENDING)
-  attempts        Int          @default(0)
+  status          OutboxStatus  @default(PENDING)
+  attempts        Int           @default(0)
   errorCode       String?
   lastError       String?
   scheduledFor    DateTime?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
   @@index([organizationId, status, createdAt])
 }
@@ -1750,7 +1813,7 @@ model OutboxMessage {
 // clicked/complaint/unsubscribe). providerEventId is unique per org so a
 // duplicate webhook is never processed twice (§58).
 model EmailWebhookEvent {
-  id              String   @id @default(cuid())
+  id              String       @id @default(cuid())
   organizationId  String
   organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   providerEventId String
@@ -1759,7 +1822,7 @@ model EmailWebhookEvent {
   subjectId       String?
   payload         Json
   processedAt     DateTime?
-  createdAt       DateTime @default(now())
+  createdAt       DateTime     @default(now())
 
   @@unique([organizationId, providerEventId])
   @@index([organizationId, provider, createdAt])
@@ -1850,13 +1913,13 @@ enum SequenceAuditAction {
 }
 
 model Sequence {
-  id             String       @id @default(cuid())
+  id             String               @id @default(cuid())
   organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   name           String
   description    String?
-  status         SequenceStatus @default(DRAFT)
-  version        Int          @default(1)
+  status         SequenceStatus       @default(DRAFT)
+  version        Int                  @default(1)
   // Optional per-sequence cap on automated emails per rolling day. Must be
   // <= organization policy (enforced in service, §45).
   maxDailyEmails Int?
@@ -1865,8 +1928,8 @@ model Sequence {
   steps          SequenceStep[]
   enrollments    SequenceEnrollment[]
   auditEvents    SequenceAuditEvent[]
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
 
   @@index([organizationId, status, updatedAt])
 }
@@ -1926,23 +1989,23 @@ model SequenceEnrollment {
 // Idempotency: an execution can only be claimed once; retries mutate the
 // same row (attempts, backoff), never duplicate it (§36-§39, §84-§87).
 model SequenceStepExecution {
-  id              String                     @id @default(cuid())
+  id              String                      @id @default(cuid())
   organizationId  String
-  organization    Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization    Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   enrollmentId    String
-  enrollment      SequenceEnrollment         @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  enrollment      SequenceEnrollment          @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
   stepId          String?
   position        Int
   status          SequenceStepExecutionStatus @default(PENDING)
-  scheduledAt     DateTime                   @default(now())
+  scheduledAt     DateTime                    @default(now())
   startedAt       DateTime?
   completedAt     DateTime?
-  attempts        Int                        @default(0)
+  attempts        Int                         @default(0)
   errorCode       String?
   errorMessage    String?
   communicationId String?
-  createdAt       DateTime                   @default(now())
-  updatedAt       DateTime                   @updatedAt
+  createdAt       DateTime                    @default(now())
+  updatedAt       DateTime                    @updatedAt
 
   @@unique([enrollmentId, position])
   @@index([organizationId, status, scheduledAt])
@@ -1950,9 +2013,9 @@ model SequenceStepExecution {
 
 // Manual CRM task created by a TASK step (§72-§74).
 model SequenceTask {
-  id             String       @id @default(cuid())
+  id             String              @id @default(cuid())
   organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   enrollmentId   String?
   enrollment     SequenceEnrollment? @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
   sequenceId     String?
@@ -1964,8 +2027,8 @@ model SequenceTask {
   dueAt          DateTime?
   completedAt    DateTime?
   createdById    String?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
 
   @@index([organizationId, assignedToId, dueAt])
   @@index([organizationId, leadId])

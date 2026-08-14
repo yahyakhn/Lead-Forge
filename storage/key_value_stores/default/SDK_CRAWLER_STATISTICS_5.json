@@ -1,48 +1,27 @@
 {
   "requestsFinished": 1,
-  "requestsFailed": 1,
-  "requestsRetries": 1,
-  "requestsFailedPerMinute": 295,
-  "requestsFinishedPerMinute": 296,
+  "requestsFailed": 0,
+  "requestsRetries": 0,
+  "requestsFailedPerMinute": 0,
+  "requestsFinishedPerMinute": 299,
   "requestMinDurationMillis": 148,
   "requestMaxDurationMillis": 148,
-  "requestTotalFailedDurationMillis": 2,
+  "requestTotalFailedDurationMillis": 0,
   "requestTotalFinishedDurationMillis": 148,
-  "crawlerStartedAt": "2026-08-13T17:55:22.555Z",
-  "crawlerFinishedAt": "2026-08-13T17:55:22.754Z",
-  "statsPersistedAt": "2026-08-13T17:55:22.754Z",
-  "crawlerRuntimeMillis": 203,
-  "crawlerLastStartTimestamp": 1786643722551,
+  "crawlerStartedAt": "2026-08-14T13:16:22.680Z",
+  "crawlerFinishedAt": "2026-08-14T13:16:22.874Z",
+  "statsPersistedAt": "2026-08-14T13:16:22.874Z",
+  "crawlerRuntimeMillis": 201,
+  "crawlerLastStartTimestamp": 1786713382673,
   "requestRetryHistogram": [
-    1,
     1
   ],
   "statsId": "5",
-  "requestAvgFailedDurationMillis": 2,
+  "requestAvgFailedDurationMillis": null,
   "requestAvgFinishedDurationMillis": 148,
-  "requestTotalDurationMillis": 150,
-  "requestsTotal": 2,
+  "requestTotalDurationMillis": 148,
+  "requestsTotal": 1,
   "requestsWithStatusCode": {},
-  "errors": {
-    "/Users/yahyakhan/Desktop/Lead Forge/lib/lead-engine/crawler/crawlee.ts:166:42": {
-      "missing error code": {
-        "RunCancelledError": {
-          "Run cancelled": {
-            "count": 1
-          }
-        }
-      }
-    }
-  },
-  "retryErrors": {
-    "/Users/yahyakhan/Desktop/Lead Forge/node_modules/@crawlee/http/internals/http-crawler.js:461:23": {
-      "missing error code": {
-        "Error": {
-          "Detected a session error, rotating session... ": {
-            "count": 1
-          }
-        }
-      }
-    }
-  }
+  "errors": {},
+  "retryErrors": {}
 }
