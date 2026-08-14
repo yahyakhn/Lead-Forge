@@ -824,7 +824,10 @@ async function activityOnExit(orgId: string, sequenceId: string, leadId: string,
 // Next instant at which sending is allowed: inside the org send window, not
 // on a skipped weekend, not on a blackout date, evaluated in the org
 // timezone. Timestamps remain UTC in the DB (§40).
-export async function nextAllowableAt(candidate: Date, settings: EmailSettings): Promise<Date> {
+export async function nextAllowableAt(
+  candidate: Date,
+  settings: Pick<EmailSettings, "timezone" | "sendStartHour" | "sendEndHour" | "skipWeekends" | "blackoutDates">,
+): Promise<Date> {
   const timezone = settings.timezone || "UTC"
   const startHour = settings.sendStartHour ?? 9
   const endHour = settings.sendEndHour ?? 17

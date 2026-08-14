@@ -675,6 +675,11 @@ export async function listCandidates(orgId: string, filters: CandidateFilters = 
         createdAt: true,
         runId: true,
         sourceId: true,
+        industry: true,
+        country: true,
+        region: true,
+        city: true,
+        jobs: true,
         scores: {
           where: { scoreStatus: "CURRENT" },
           take: 1,
