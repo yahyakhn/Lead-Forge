@@ -67,6 +67,11 @@ import {
 } from "@/lib/lead-engine/scoring/service"
 import { IcpParseError, parseIcpPrompt, type ParsedIcp } from "@/lib/crm/icp-parse"
 import { AIError } from "@/lib/lead-engine/ai/types"
+import {
+  ClassificationError,
+  classifyLead,
+  type LeadClassificationResult,
+} from "@/lib/lead-engine/classification/service"
 
 export type ActionResult = { ok: true; id?: string; redirectTo?: string } | { ok: false; error: string }
 
@@ -613,5 +618,31 @@ export async function parseIcpPromptAction(input: unknown): Promise<ActionResult
     }
     console.error("parseIcpPromptAction", e)
     return { ok: false, error: "Could not parse the description right now" }
+  }
+}
+
+const classifyLeadSchema = z.object({
+  leadId: z.string().min(1, "leadId is required"),
+  icpId: z.string().min(1, "icpId is required"),
+})
+
+export async function classifyLeadAction(
+  input: unknown,
+): Promise<ActionResult | { ok: true; result: LeadClassificationResult }> {
+  const session = await requireSession()
+  const parsed = classifyLeadSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
+  }
+  try {
+    const result = await classifyLead(session.organization.id, parsed.data.leadId, parsed.data.icpId)
+    revalidatePath(`/leads/${parsed.data.leadId}`)
+    return { ok: true, result }
+  } catch (e) {
+    if (e instanceof ClassificationError || e instanceof AIError) {
+      return { ok: false, error: e.message }
+    }
+    console.error("classifyLeadAction", e)
+    return { ok: false, error: "Classification failed" }
   }
 }

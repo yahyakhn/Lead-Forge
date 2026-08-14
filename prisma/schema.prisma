@@ -179,6 +179,7 @@ model Organization {
   leadScores               LeadScore[]
   leadScoreJobs            LeadScoreJob[]
   scoringAuditEvents       ScoringAuditEvent[]
+  leadClassifications      LeadClassification[]
   enrichmentSettings       EnrichmentSettings?
   enrichmentRequests       EnrichmentRequest[]
   enrichmentResults        EnrichmentResult[]
@@ -316,6 +317,7 @@ model Lead {
   activities           Activity[]
   deals                Deal[]
   scores               LeadScore[]
+  classifications      LeadClassification[]
   enrichmentRequests   EnrichmentRequest[]        @relation("LeadEnrichmentRequests")
   enrichmentConflicts  EnrichmentConflict[]       @relation("LeadEnrichmentConflicts")
   emailAddresses       EmailAddress[]
@@ -426,6 +428,7 @@ model ICPProfile {
   scraperRuns    ScraperRun[]
   scores         LeadScore[]
   scoreJobs      LeadScoreJob[]
+  classifications LeadClassification[]
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -864,6 +867,13 @@ model LeadCandidateConversion {
 
 // ── TASK 012: lead scoring + ICP qualification ────────────────────────────
 
+enum ClassificationLabel {
+  HIGH_FIT
+  MEDIUM_FIT
+  LOW_FIT
+  INSUFFICIENT_DATA
+}
+
 enum Qualification {
   HOT
   GOOD
@@ -962,6 +972,33 @@ model LeadScoreJob {
 }
 
 // TASK 012 audit trail (§58): ICP lifecycle + scoring events.
+// TASK 018: latest AI classification of a lead against an ICP (spec §19-§20).
+// One row per (lead, ICP); re-classification replaces it in place. Purely
+// interpretive — classification output is never written into factual CRM
+// fields or deterministic scoring (spec §11, §32).
+model LeadClassification {
+  id                 String              @id @default(cuid())
+  organizationId     String
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  leadId             String
+  lead               Lead                @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  icpId              String
+  icpProfile         ICPProfile          @relation(fields: [icpId], references: [id], onDelete: Cascade)
+  classification     ClassificationLabel
+  fitScore           Int
+  reasons            Json
+  concerns           Json
+  matchedCriteria    Json
+  unmatchedCriteria  Json
+  evidenceReferences Json
+  model              String
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  @@unique([organizationId, leadId, icpId])
+  @@index([organizationId, leadId])
+}
+
 model ScoringAuditEvent {
   id             String            @id @default(cuid())
   organizationId String
