@@ -180,6 +180,7 @@ model Organization {
   leadScoreJobs            LeadScoreJob[]
   scoringAuditEvents       ScoringAuditEvent[]
   leadClassifications      LeadClassification[]
+  accountResearches        AccountResearch[]
   enrichmentSettings       EnrichmentSettings?
   enrichmentRequests       EnrichmentRequest[]
   enrichmentResults        EnrichmentResult[]
@@ -247,6 +248,7 @@ model Company {
   deals                Deal[]
   candidateConversions LeadCandidateConversion[]
   emailAddresses       EmailAddress[]
+  accountResearch      AccountResearch?
   createdAt            DateTime                  @default(now())
   updatedAt            DateTime                  @updatedAt
   lastVerifiedAt       DateTime?
@@ -997,6 +999,25 @@ model LeadClassification {
 
   @@unique([organizationId, leadId, icpId])
   @@index([organizationId, leadId])
+}
+
+model AccountResearch {
+  id                 String       @id @default(cuid())
+  organizationId     String
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  companyId          String       @unique
+  company            Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companySummary     String
+  keyFacts           Json
+  relevantSignals    Json
+  researchInsights   Json
+  unknowns           Json
+  evidenceReferences Json
+  model              String
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  @@index([organizationId, companyId])
 }
 
 model ScoringAuditEvent {

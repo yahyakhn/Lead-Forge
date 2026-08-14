@@ -72,6 +72,11 @@ import {
   classifyLead,
   type LeadClassificationResult,
 } from "@/lib/lead-engine/classification/service"
+import {
+  ResearchError,
+  researchAccount,
+  type AccountResearchResult,
+} from "@/lib/lead-engine/research/service"
 
 export type ActionResult = { ok: true; id?: string; redirectTo?: string } | { ok: false; error: string }
 
@@ -644,5 +649,30 @@ export async function classifyLeadAction(
     }
     console.error("classifyLeadAction", e)
     return { ok: false, error: "Classification failed" }
+  }
+}
+
+const researchAccountSchema = z.object({
+  companyId: z.string().min(1, "companyId is required"),
+})
+
+export async function researchAccountAction(
+  input: unknown,
+): Promise<ActionResult | { ok: true; result: AccountResearchResult }> {
+  const session = await requireSession()
+  const parsed = researchAccountSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
+  }
+  try {
+    const result = await researchAccount(session.organization.id, parsed.data.companyId)
+    revalidatePath(`/companies/${parsed.data.companyId}`)
+    return { ok: true, result }
+  } catch (e) {
+    if (e instanceof ResearchError || e instanceof AIError) {
+      return { ok: false, error: e.message }
+    }
+    console.error("researchAccountAction", e)
+    return { ok: false, error: "Research failed" }
   }
 }

@@ -12,6 +12,8 @@ import { PageHeader } from "@/components/crm/page-header"
 import { ErrorState } from "@/components/crm/states"
 import { ActivityTimeline } from "@/components/crm/activity-timeline"
 import { CompanyStatusBadge, PriorityBadge, ScoreBadge, StatusBadge } from "@/components/crm/badges"
+import { AccountResearchCard } from "@/components/crm/research/account-research-card"
+import { getAccountResearch } from "@/lib/lead-engine/research/service"
 import { formatDate, formatMoney } from "@/lib/format"
 import { updateCompanyAction, createContactAction, createActivityAction } from "@/lib/actions"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -27,20 +29,21 @@ export default async function CompanyDetailPage({
 
   let data
   try {
-    const [company, contacts, leads, deals, activities, companies] = await Promise.all([
+    const [company, contacts, leads, deals, activities, companies, accountResearch] = await Promise.all([
       getCompany(session.organization.id, id),
       listContacts(session.organization.id, { companyId: id, pageSize: 50 }),
       listLeads(session.organization.id, { companyId: id, pageSize: 50 }),
       listDeals(session.organization.id, { companyId: id, pageSize: 50 }),
       listActivities(session.organization.id, { companyId: id, pageSize: 50 }),
       listCompanyOptions(session.organization.id),
+      getAccountResearch(session.organization.id, id),
     ])
-    data = { company, contacts, leads, deals, activities, companies }
+    data = { company, contacts, leads, deals, activities, companies, accountResearch }
   } catch {
     return <ErrorState message="We couldn't load this company." />
   }
 
-  const { company, contacts, leads, deals, activities, companies } = data
+  const { company, contacts, leads, deals, activities, companies, accountResearch } = data
   if (!company) notFound()
 
   return (
@@ -210,6 +213,8 @@ export default async function CompanyDetailPage({
             <p className="py-4 text-center text-sm text-muted-foreground">No activity yet.</p>
           )}
         </section>
+
+        <AccountResearchCard companyId={company.id} existing={accountResearch} />
       </div>
     </div>
   )
