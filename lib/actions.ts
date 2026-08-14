@@ -65,6 +65,8 @@ import {
   startBulkScoring,
   type ScoredResult,
 } from "@/lib/lead-engine/scoring/service"
+import { IcpParseError, parseIcpPrompt, type ParsedIcp } from "@/lib/crm/icp-parse"
+import { AIError } from "@/lib/lead-engine/ai/types"
 
 export type ActionResult = { ok: true; id?: string; redirectTo?: string } | { ok: false; error: string }
 
@@ -589,5 +591,27 @@ export async function updateEnrichmentSettingsAction(input: {
     return { ok: true }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Settings update failed" }
+  }
+}
+
+const parseIcpPromptSchema = z.object({
+  text: z.string().trim().min(1, "Describe your ideal customer profile first").max(2000, "ICP description is too long (max 2000 characters)"),
+})
+
+export async function parseIcpPromptAction(input: unknown): Promise<ActionResult | { ok: true; parsed: ParsedIcp }> {
+  await requireSession()
+  const parsed = parseIcpPromptSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
+  }
+  try {
+    const result = await parseIcpPrompt(parsed.data.text)
+    return { ok: true, parsed: result }
+  } catch (e) {
+    if (e instanceof IcpParseError || e instanceof AIError) {
+      return { ok: false, error: e.message }
+    }
+    console.error("parseIcpPromptAction", e)
+    return { ok: false, error: "Could not parse the description right now" }
   }
 }

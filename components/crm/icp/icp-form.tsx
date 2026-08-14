@@ -22,6 +22,8 @@ import {
 } from "@/lib/crm/icp-shared"
 import { ALL_SENIORITIES, DEFAULT_WEIGHTS, DEFAULT_THRESHOLDS, DEFAULT_UNKNOWN_CREDIT } from "@/lib/lead-engine/scoring/engine"
 import { cn } from "@/lib/utils"
+import { parseIcpPromptAction } from "@/lib/actions"
+import { criteriaToInput, type ParsedIcp } from "@/lib/crm/icp-parse"
 
 const CURRENCY_OPTIONS: SearchOption[] = SUPPORTED_CURRENCIES.map((c) => ({ value: c, label: c }))
 const COMPANY_TYPE_OPTIONS = COMPANY_TYPES.map((t) => ({ value: t, label: humanize(t) }))
@@ -181,6 +183,66 @@ export function ICPForm({
     return employeeMin === presetMin && employeeMax === presetMax
   }
 
+  const [nlOpen, setNlOpen] = useState(false)
+  const [nlText, setNlText] = useState("")
+  const [nlBusy, setNlBusy] = useState(false)
+  const [nlError, setNlError] = useState("")
+  const [nlWarnings, setNlWarnings] = useState<string[]>([])
+  const [nlParsed, setNlParsed] = useState<ParsedIcp | null>(null)
+
+  const parseNl = async () => {
+    setNlError("")
+    setNlWarnings([])
+    setNlParsed(null)
+    if (!nlText.trim()) {
+      setNlError("Describe your ideal customer profile first")
+      return
+    }
+    setNlBusy(true)
+    try {
+      const result = await parseIcpPromptAction({ text: nlText })
+      if (!result.ok) {
+        setNlError(result.error)
+        return
+      }
+      if ("parsed" in result) {
+        setNlParsed(result.parsed)
+        setNlWarnings(result.parsed.warnings)
+      }
+    } catch {
+      setNlError("Could not parse the description right now")
+    } finally {
+      setNlBusy(false)
+    }
+  }
+
+  const applyParsed = (parsed: ParsedIcp) => {
+    const input = criteriaToInput(parsed.criteria)
+    setIndustries(input.industries)
+    setCountries(input.countries)
+    setRegions(input.regions)
+    setCities(input.cities)
+    setEmployeeMin(rangeToInput(input.employeeMin))
+    setEmployeeMax(rangeToInput(input.employeeMax))
+    setRevenueMin(rangeToInput(input.revenueMin))
+    setRevenueMax(rangeToInput(input.revenueMax))
+    setCurrency(input.revenueCurrency)
+    setTechnologies(input.technologies)
+    setCompanyTypes(input.companyTypes)
+    setSignals(input.signals)
+    setAgeMin(rangeToInput(input.companyAgeMin))
+    setAgeMax(rangeToInput(input.companyAgeMax))
+    setExcludeIndustries(input.excludeIndustries)
+    setExcludeCountries(input.excludeCountries)
+    setExcludeCompanyTypes(input.excludeCompanyTypes)
+    setExcludeKeywords(input.excludeKeywords)
+    setNlOpen(false)
+    setNlText("")
+    setNlParsed(null)
+    setNlWarnings([])
+    toast.success("Parsed criteria applied. Review before saving.")
+  }
+
   const updateWeight = (key: string, value: number) => {
     setScoringWeights((prev) => ({ ...prev, [key]: Math.max(0, Math.min(100, value)) }))
   }
@@ -229,6 +291,53 @@ export function ICPForm({
       }}
     >
       <div className="space-y-6">
+        <div>
+          <button
+            type="button"
+            onClick={() => setNlOpen((v) => !v)}
+            className="text-sm font-medium text-primary hover:underline"
+          >
+            {nlOpen ? "Hide plain-language helper" : "Describe your ICP in plain language instead?"}
+          </button>
+          {nlOpen && (
+            <div className="mt-3 rounded-xl border bg-card p-4">
+              <div className="grid gap-3">
+                <Textarea
+                  value={nlText}
+                  onChange={(e) => setNlText(e.target.value)}
+                  rows={3}
+                  maxLength={2000}
+                  placeholder='e.g. "B2B SaaS companies in India with 50-500 employees running on AWS, founded in the last 5 years, that are actively hiring. Exclude agencies."'
+                />
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs text-muted-foreground">{nlText.length}/2000</p>
+                  <Button type="button" size="sm" onClick={parseNl} disabled={nlBusy || !nlText.trim()}>
+                    {nlBusy ? "Parsing…" : "Parse description"}
+                  </Button>
+                </div>
+                {nlError && <p className="text-xs text-destructive">{nlError}</p>}
+                {nlWarnings.length > 0 && (
+                  <ul className="list-inside list-disc text-xs text-muted-foreground">
+                    {nlWarnings.map((warning) => (
+                      <li key={warning}>{warning}</li>
+                    ))}
+                  </ul>
+                )}
+                {nlParsed && (
+                  <div className="grid gap-3">
+                    <div className="rounded-lg bg-muted p-3">
+                      <CriteriaSummary criteria={nlParsed.criteria} />
+                    </div>
+                    <Button type="button" size="sm" onClick={() => applyParsed(nlParsed)}>
+                      Apply to form
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
         <Section title="Basic Information">
           <Field label="ICP Name *">
             <Input value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} placeholder="India SaaS ICP" />
