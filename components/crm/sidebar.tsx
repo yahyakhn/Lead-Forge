@@ -42,6 +42,7 @@ import {
   SettingsIcon,
   MailIcon,
   ShieldCheckIcon,
+  BarChart3Icon,
 } from "lucide-react"
 
 interface NavItem {
@@ -76,6 +77,7 @@ const NAV: NavGroup[] = [
     section: "CRM",
     items: [
       { href: "/leads", label: "Leads", icon: Users2Icon },
+      { href: "/analytics", label: "Analytics", icon: BarChart3Icon },
       { href: "/companies", label: "Companies", icon: Building2Icon },
       { href: "/contacts", label: "Contacts", icon: ContactIcon },
       { href: "/pipeline", label: "Pipeline", icon: KanbanSquareIcon },
