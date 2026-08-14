@@ -12,16 +12,27 @@ import { getAIProvider } from "@/lib/lead-engine/ai/registry"
 import type { AIProvider } from "@/lib/lead-engine/ai/types"
 import { humanize, rangeLabel, type ICPCriteria } from "@/lib/crm/icp-shared"
 import type { FieldEvidence } from "@/lib/lead-engine/extraction/types"
-import { ClassificationLabel, EnrichmentResultStatus } from "@/generated/prisma/enums"
+import {
+  ClassificationLabel,
+  EnrichmentResultStatus,
+} from "@/generated/prisma/enums"
 import { CLASSIFICATION_SYSTEM_PROMPT } from "@/lib/lead-engine/classification/classification-prompt"
 
-export const CLASSIFICATION_LABELS = ["HIGH_FIT", "MEDIUM_FIT", "LOW_FIT", "INSUFFICIENT_DATA"] as const
+export const CLASSIFICATION_LABELS = [
+  "HIGH_FIT",
+  "MEDIUM_FIT",
+  "LOW_FIT",
+  "INSUFFICIENT_DATA",
+] as const
 export type ClassificationLabelName = (typeof CLASSIFICATION_LABELS)[number]
 
 export class ClassificationError extends Error {
   readonly code: "LEAD_NOT_FOUND" | "ICP_NOT_FOUND" | "CLASSIFICATION_FAILED"
 
-  constructor(code: "LEAD_NOT_FOUND" | "ICP_NOT_FOUND" | "CLASSIFICATION_FAILED", message: string) {
+  constructor(
+    code: "LEAD_NOT_FOUND" | "ICP_NOT_FOUND" | "CLASSIFICATION_FAILED",
+    message: string,
+  ) {
     super(message)
     this.name = "ClassificationError"
     this.code = code
@@ -41,7 +52,8 @@ export interface LeadClassificationResult {
   model: string
 }
 
-export type EvidenceSource = "COMPANY_PROFILE" | "CONTACT" | "ENRICHMENT" | "EXTRACTION"
+export type EvidenceSource =
+  "COMPANY_PROFILE" | "CONTACT" | "ENRICHMENT" | "EXTRACTION"
 
 export interface EvidenceItem {
   source: EvidenceSource
@@ -60,13 +72,21 @@ const referenceSchema = z
 
 export const classificationSchema = z.object({
   classification: z.enum(CLASSIFICATION_LABELS, {
-    message: "classification must be HIGH_FIT, MEDIUM_FIT, LOW_FIT or INSUFFICIENT_DATA",
+    message:
+      "classification must be HIGH_FIT, MEDIUM_FIT, LOW_FIT or INSUFFICIENT_DATA",
   }),
-  fitScore: z.number({ message: "fitScore must be a number" }).refine((v) => v >= 0 && v <= 100, {
-    message: "fitScore must be between 0 and 100",
-  }),
-  reasons: z.array(z.string().trim().min(1).max(300)).min(3, "Provide 3 to 7 reasons").max(7, "Provide at most 7 reasons"),
-  concerns: z.array(z.string().trim().min(1).max(300)).max(5, "Provide at most 5 concerns"),
+  fitScore: z
+    .number({ message: "fitScore must be a number" })
+    .refine((v) => v >= 0 && v <= 100, {
+      message: "fitScore must be between 0 and 100",
+    }),
+  reasons: z
+    .array(z.string().trim().min(1).max(300))
+    .min(3, "Provide 3 to 7 reasons")
+    .max(7, "Provide at most 7 reasons"),
+  concerns: z
+    .array(z.string().trim().min(1).max(300))
+    .max(5, "Provide at most 5 concerns"),
   matchedCriteria: z.array(z.string().trim().min(1).max(200)).max(12),
   unmatchedCriteria: z.array(z.string().trim().min(1).max(200)).max(12),
   evidenceReferences: z.array(referenceSchema).max(25),
@@ -76,7 +96,10 @@ type ClassificationDto = z.infer<typeof classificationSchema>
 
 // ── Evidence assembly (deterministic, tenant-scoped) ─────────────────────
 
-async function loadEvidence(orgId: string, leadId: string): Promise<EvidenceItem[]> {
+export async function loadEvidence(
+  orgId: string,
+  leadId: string,
+): Promise<EvidenceItem[]> {
   const items: EvidenceItem[] = []
   const lead = await prisma.lead.findFirst({
     where: { id: leadId, organizationId: orgId },
@@ -86,7 +109,9 @@ async function loadEvidence(orgId: string, leadId: string): Promise<EvidenceItem
 
   const [company, contact, results, candidate] = await Promise.all([
     lead.companyId
-      ? prisma.company.findFirst({ where: { id: lead.companyId, organizationId: orgId } })
+      ? prisma.company.findFirst({
+          where: { id: lead.companyId, organizationId: orgId },
+        })
       : Promise.resolve(null),
     lead.contactId
       ? prisma.contact.findFirst({
@@ -95,7 +120,11 @@ async function loadEvidence(orgId: string, leadId: string): Promise<EvidenceItem
         })
       : Promise.resolve(null),
     prisma.enrichmentResult.findMany({
-      where: { organizationId: orgId, leadId, status: EnrichmentResultStatus.CONFIRMED },
+      where: {
+        organizationId: orgId,
+        leadId,
+        status: EnrichmentResultStatus.CONFIRMED,
+      },
       orderBy: { observedAt: "desc" },
       take: MAX_ENRICHMENT_EVIDENCE,
     }),
@@ -108,26 +137,56 @@ async function loadEvidence(orgId: string, leadId: string): Promise<EvidenceItem
   ])
 
   if (company) {
-    if (company.name) items.push({ source: "COMPANY_PROFILE", text: `company name is ${company.name}` })
+    if (company.name)
+      items.push({
+        source: "COMPANY_PROFILE",
+        text: `company name is ${company.name}`,
+      })
     if (company.website ?? company.domain) {
-      items.push({ source: "COMPANY_PROFILE", text: `website is ${company.website ?? company.domain}` })
+      items.push({
+        source: "COMPANY_PROFILE",
+        text: `website is ${company.website ?? company.domain}`,
+      })
     }
     if (company.description) {
-      items.push({ source: "COMPANY_PROFILE", text: `description: ${company.description.slice(0, MAX_DESCRIPTION_CHARS)}` })
+      items.push({
+        source: "COMPANY_PROFILE",
+        text: `description: ${company.description.slice(0, MAX_DESCRIPTION_CHARS)}`,
+      })
     }
-    if (company.industry) items.push({ source: "COMPANY_PROFILE", text: `industry is ${company.industry}` })
+    if (company.industry)
+      items.push({
+        source: "COMPANY_PROFILE",
+        text: `industry is ${company.industry}`,
+      })
     if (company.employeeCount !== null && company.employeeCount !== undefined) {
-      items.push({ source: "COMPANY_PROFILE", text: `employee count is ${company.employeeCount}` })
+      items.push({
+        source: "COMPANY_PROFILE",
+        text: `employee count is ${company.employeeCount}`,
+      })
     } else if (company.employeeRange) {
-      items.push({ source: "COMPANY_PROFILE", text: `employee range is ${company.employeeRange}` })
+      items.push({
+        source: "COMPANY_PROFILE",
+        text: `employee range is ${company.employeeRange}`,
+      })
     }
-    if (company.revenueRange) items.push({ source: "COMPANY_PROFILE", text: `revenue range is ${company.revenueRange}` })
-    const location = [company.country, company.state, company.city].filter(Boolean).join(", ")
-    if (location) items.push({ source: "COMPANY_PROFILE", text: `location is ${location}` })
+    if (company.revenueRange)
+      items.push({
+        source: "COMPANY_PROFILE",
+        text: `revenue range is ${company.revenueRange}`,
+      })
+    const location = [company.country, company.state, company.city]
+      .filter(Boolean)
+      .join(", ")
+    if (location)
+      items.push({ source: "COMPANY_PROFILE", text: `location is ${location}` })
   }
 
   if (contact?.jobTitle) {
-    items.push({ source: "CONTACT", text: `contact job title is ${contact.jobTitle}` })
+    items.push({
+      source: "CONTACT",
+      text: `contact job title is ${contact.jobTitle}`,
+    })
   }
 
   for (const r of results) {
@@ -137,7 +196,8 @@ async function loadEvidence(orgId: string, leadId: string): Promise<EvidenceItem
     })
   }
 
-  const provenance = (candidate?.fieldProvenance as unknown as FieldEvidence[] | null) ?? []
+  const provenance =
+    (candidate?.fieldProvenance as unknown as FieldEvidence[] | null) ?? []
   for (const p of provenance.slice(0, MAX_EXTRACTION_EVIDENCE)) {
     items.push({
       source: "EXTRACTION",
@@ -152,44 +212,71 @@ async function loadEvidence(orgId: string, leadId: string): Promise<EvidenceItem
 
 function describeCriteria(criteria: ICPCriteria): string[] {
   const lines: string[] = []
-  if (criteria.industries.length > 0) lines.push(`- Industries: ${criteria.industries.join(", ")}`)
+  if (criteria.industries.length > 0)
+    lines.push(`- Industries: ${criteria.industries.join(", ")}`)
   const locations = [
     ...criteria.countries,
     ...criteria.regions.map((r) => `${r} (region)`),
     ...criteria.cities.map((c) => `${c} (city)`),
   ]
   if (locations.length > 0) lines.push(`- Locations: ${locations.join(", ")}`)
-  if (criteria.employeeRange) lines.push(`- Employee count: ${rangeLabel(criteria.employeeRange)}`)
+  if (criteria.employeeRange)
+    lines.push(`- Employee count: ${rangeLabel(criteria.employeeRange)}`)
   if (criteria.revenueRange) {
-    lines.push(`- Revenue: ${rangeLabel(criteria.revenueRange)} ${criteria.revenueRange.currency ?? "USD"}`)
+    lines.push(
+      `- Revenue: ${rangeLabel(criteria.revenueRange)} ${criteria.revenueRange.currency ?? "USD"}`,
+    )
   }
-  if (criteria.technologies.length > 0) lines.push(`- Technologies: ${criteria.technologies.join(", ")}`)
-  if (criteria.companyTypes.length > 0) lines.push(`- Company types: ${criteria.companyTypes.map(humanize).join(", ")}`)
-  if (criteria.signals.length > 0) lines.push(`- Signals: ${criteria.signals.map(humanize).join(", ")}`)
-  if (criteria.companyAge) lines.push(`- Company age: ${rangeLabel(criteria.companyAge)} years`)
+  if (criteria.technologies.length > 0)
+    lines.push(`- Technologies: ${criteria.technologies.join(", ")}`)
+  if (criteria.companyTypes.length > 0)
+    lines.push(
+      `- Company types: ${criteria.companyTypes.map(humanize).join(", ")}`,
+    )
+  if (criteria.signals.length > 0)
+    lines.push(`- Signals: ${criteria.signals.map(humanize).join(", ")}`)
+  if (criteria.companyAge)
+    lines.push(`- Company age: ${rangeLabel(criteria.companyAge)} years`)
   const excluded: string[] = []
-  if (criteria.exclusions.industries.length > 0) excluded.push(`industries ${criteria.exclusions.industries.join(", ")}`)
-  if (criteria.exclusions.countries.length > 0) excluded.push(`locations ${criteria.exclusions.countries.join(", ")}`)
+  if (criteria.exclusions.industries.length > 0)
+    excluded.push(`industries ${criteria.exclusions.industries.join(", ")}`)
+  if (criteria.exclusions.countries.length > 0)
+    excluded.push(`locations ${criteria.exclusions.countries.join(", ")}`)
   if (criteria.exclusions.companyTypes.length > 0) {
-    excluded.push(`company types ${criteria.exclusions.companyTypes.map(humanize).join(", ")}`)
+    excluded.push(
+      `company types ${criteria.exclusions.companyTypes.map(humanize).join(", ")}`,
+    )
   }
-  if (criteria.exclusions.keywords.length > 0) excluded.push(`keywords ${criteria.exclusions.keywords.join(", ")}`)
+  if (criteria.exclusions.keywords.length > 0)
+    excluded.push(`keywords ${criteria.exclusions.keywords.join(", ")}`)
   if (excluded.length > 0) lines.push(`- EXCLUDE: ${excluded.join("; ")}`)
   return lines
 }
 
-function buildUserPrompt(criteria: ICPCriteria, items: EvidenceItem[], scoreContext: string | null): string {
+function buildUserPrompt(
+  criteria: ICPCriteria,
+  items: EvidenceItem[],
+  scoreContext: string | null,
+): string {
   const sections: string[] = []
-  sections.push(`ICP CRITERIA:\n${describeCriteria(criteria).join("\n") || "- (no criteria specified)"}`)
+  sections.push(
+    `ICP CRITERIA:\n${describeCriteria(criteria).join("\n") || "- (no criteria specified)"}`,
+  )
 
   const evidence = items.map((item, i) => `E${i + 1}: ${item.text}`).join("\n")
-  sections.push(`EVIDENCE (use these IDs when referencing evidence):\n${evidence}`)
+  sections.push(
+    `EVIDENCE (use these IDs when referencing evidence):\n${evidence}`,
+  )
 
   if (scoreContext) {
-    sections.push(`CONTEXT (informational only, NOT evidence — do not reference it with an ID):\n${scoreContext}`)
+    sections.push(
+      `CONTEXT (informational only, NOT evidence — do not reference it with an ID):\n${scoreContext}`,
+    )
   }
 
-  sections.push("Classify this lead against the ICP. Follow the rules in the system prompt exactly.")
+  sections.push(
+    "Classify this lead against the ICP. Follow the rules in the system prompt exactly.",
+  )
   return sections.join("\n\n")
 }
 
@@ -214,12 +301,17 @@ function normalize(
     unmatchedCriteria: dedupe(dto.unmatchedCriteria),
     // Only references that match the evidence actually supplied survive;
     // model-generated identifiers are never trusted (spec §15).
-    evidenceReferences: dedupe(dto.evidenceReferences.map((r) => r.toUpperCase())).filter((r) => validReferenceIds.has(r)),
+    evidenceReferences: dedupe(
+      dto.evidenceReferences.map((r) => r.toUpperCase()),
+    ).filter((r) => validReferenceIds.has(r)),
     model,
   }
 }
 
-function insufficientResult(leadId: string, icpId: string): LeadClassificationResult {
+function insufficientResult(
+  leadId: string,
+  icpId: string,
+): LeadClassificationResult {
   return {
     leadId,
     icpId,
@@ -276,10 +368,20 @@ export async function classifyLead(
   )
 
   const validIds = new Set(items.map((_, i) => `E${i + 1}`))
-  return persist(orgId, leadId, icpId, normalize(dto, leadId, icpId, model, validIds))
+  return persist(
+    orgId,
+    leadId,
+    icpId,
+    normalize(dto, leadId, icpId, model, validIds),
+  )
 }
 
-async function persist(orgId: string, leadId: string, icpId: string, result: LeadClassificationResult) {
+async function persist(
+  orgId: string,
+  leadId: string,
+  icpId: string,
+  result: LeadClassificationResult,
+) {
   const data = {
     organizationId: orgId,
     leadId,
@@ -294,7 +396,9 @@ async function persist(orgId: string, leadId: string, icpId: string, result: Lea
     model: result.model,
   }
   await prisma.leadClassification.upsert({
-    where: { organizationId_leadId_icpId: { organizationId: orgId, leadId, icpId } },
+    where: {
+      organizationId_leadId_icpId: { organizationId: orgId, leadId, icpId },
+    },
     create: data,
     update: data,
   })

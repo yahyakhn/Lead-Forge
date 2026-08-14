@@ -11,7 +11,10 @@ import { getActiveICP } from "@/lib/crm/icp"
 import { humanize, type ICPCriteria } from "@/lib/crm/icp-shared"
 import { getAIProvider } from "@/lib/lead-engine/ai/registry"
 import type { AIProvider } from "@/lib/lead-engine/ai/types"
-import type { FieldEvidence, JobPosting } from "@/lib/lead-engine/extraction/types"
+import type {
+  FieldEvidence,
+  JobPosting,
+} from "@/lib/lead-engine/extraction/types"
 import { EnrichmentResultStatus } from "@/generated/prisma/enums"
 import { RESEARCH_SYSTEM_PROMPT } from "@/lib/lead-engine/research/research-prompt"
 
@@ -34,6 +37,7 @@ export interface AccountResearchResult {
   unknowns: string[]
   evidenceReferences: string[]
   model: string
+  updatedAt: Date
 }
 
 type ResearchEvidenceSource = "COMPANY_PROFILE" | "ENRICHMENT" | "EXTRACTION"
@@ -55,15 +59,28 @@ const referenceSchema = z
   .regex(/^E\d+$/i, "Evidence references must look like E1, E2, ...")
 
 export const accountResearchSchema = z.object({
-  companySummary: z.string().trim().min(1).max(800, "companySummary must be at most 800 characters"),
-  keyFacts: z.array(z.string().trim().min(1).max(200)).max(16, "Provide at most 16 key facts"),
-  relevantSignals: z.array(z.string().trim().min(1).max(200)).max(10, "Provide at most 10 signals"),
-  researchInsights: z.array(z.string().trim().min(1).max(300)).max(8, "Provide at most 8 insights"),
-  unknowns: z.array(z.string().trim().min(1).max(200)).max(10, "Provide at most 10 unknowns"),
+  companySummary: z
+    .string()
+    .trim()
+    .min(1)
+    .max(800, "companySummary must be at most 800 characters"),
+  keyFacts: z
+    .array(z.string().trim().min(1).max(200))
+    .max(16, "Provide at most 16 key facts"),
+  relevantSignals: z
+    .array(z.string().trim().min(1).max(200))
+    .max(10, "Provide at most 10 signals"),
+  researchInsights: z
+    .array(z.string().trim().min(1).max(300))
+    .max(8, "Provide at most 8 insights"),
+  unknowns: z
+    .array(z.string().trim().min(1).max(200))
+    .max(10, "Provide at most 10 unknowns"),
   evidenceReferences: z.array(referenceSchema).max(25),
 })
 
 type ResearchDto = z.infer<typeof accountResearchSchema>
+type ResearchPayload = Omit<AccountResearchResult, "updatedAt">
 
 // ── Evidence assembly (deterministic, tenant-scoped) ─────────────────────
 
@@ -81,9 +98,15 @@ function profileEvidence(company: {
   city: string | null
 }): ResearchEvidenceItem[] {
   const items: ResearchEvidenceItem[] = []
-  items.push({ source: "COMPANY_PROFILE", text: `company name is ${company.name}` })
+  items.push({
+    source: "COMPANY_PROFILE",
+    text: `company name is ${company.name}`,
+  })
   if (company.website ?? company.domain) {
-    items.push({ source: "COMPANY_PROFILE", text: `website is ${company.website ?? company.domain}` })
+    items.push({
+      source: "COMPANY_PROFILE",
+      text: `website is ${company.website ?? company.domain}`,
+    })
   }
   if (company.description) {
     items.push({
@@ -91,15 +114,32 @@ function profileEvidence(company: {
       text: `description: ${company.description.slice(0, MAX_DESCRIPTION_CHARS)}`,
     })
   }
-  if (company.industry) items.push({ source: "COMPANY_PROFILE", text: `industry is ${company.industry}` })
+  if (company.industry)
+    items.push({
+      source: "COMPANY_PROFILE",
+      text: `industry is ${company.industry}`,
+    })
   if (company.employeeCount !== null && company.employeeCount !== undefined) {
-    items.push({ source: "COMPANY_PROFILE", text: `employee count is ${company.employeeCount}` })
+    items.push({
+      source: "COMPANY_PROFILE",
+      text: `employee count is ${company.employeeCount}`,
+    })
   } else if (company.employeeRange) {
-    items.push({ source: "COMPANY_PROFILE", text: `employee range is ${company.employeeRange}` })
+    items.push({
+      source: "COMPANY_PROFILE",
+      text: `employee range is ${company.employeeRange}`,
+    })
   }
-  if (company.revenueRange) items.push({ source: "COMPANY_PROFILE", text: `revenue range is ${company.revenueRange}` })
-  const location = [company.country, company.state, company.city].filter(Boolean).join(", ")
-  if (location) items.push({ source: "COMPANY_PROFILE", text: `location is ${location}` })
+  if (company.revenueRange)
+    items.push({
+      source: "COMPANY_PROFILE",
+      text: `revenue range is ${company.revenueRange}`,
+    })
+  const location = [company.country, company.state, company.city]
+    .filter(Boolean)
+    .join(", ")
+  if (location)
+    items.push({ source: "COMPANY_PROFILE", text: `location is ${location}` })
   return items
 }
 
@@ -117,24 +157,45 @@ function jobEvidence(jobs: JobPosting[]): ResearchEvidenceItem[] {
   return [item]
 }
 
-async function loadEvidence(
+export async function loadEvidence(
   orgId: string,
-  company: { id: string; name: string; website: string | null; domain: string | null; description: string | null; industry: string | null; employeeCount: number | null; employeeRange: string | null; revenueRange: string | null; country: string | null; state: string | null; city: string | null; sourceCandidateId: string | null },
+  company: {
+    id: string
+    name: string
+    website: string | null
+    domain: string | null
+    description: string | null
+    industry: string | null
+    employeeCount: number | null
+    employeeRange: string | null
+    revenueRange: string | null
+    country: string | null
+    state: string | null
+    city: string | null
+    sourceCandidateId: string | null
+  },
 ): Promise<ResearchEvidenceItem[]> {
   const items: ResearchEvidenceItem[] = profileEvidence(company)
   const candidate = company.sourceCandidateId
-    ? await prisma.leadCandidate.findFirst({ where: { id: company.sourceCandidateId, organizationId: orgId } })
+    ? await prisma.leadCandidate.findFirst({
+        where: { id: company.sourceCandidateId, organizationId: orgId },
+      })
     : null
 
   // Company-level enrichment facts: confirmed results attached to this
   // company's leads (e.g. technology detection, descriptions).
   const enrichmentResults = await prisma.enrichmentResult.findMany({
-    where: { organizationId: orgId, status: EnrichmentResultStatus.CONFIRMED, request: { lead: { companyId: company.id } } },
+    where: {
+      organizationId: orgId,
+      status: EnrichmentResultStatus.CONFIRMED,
+      request: { lead: { companyId: company.id } },
+    },
     orderBy: { observedAt: "desc" },
     take: MAX_ENRICHMENT_EVIDENCE,
   })
 
-  const provenance = (candidate?.fieldProvenance as unknown as FieldEvidence[] | null) ?? []
+  const provenance =
+    (candidate?.fieldProvenance as unknown as FieldEvidence[] | null) ?? []
   const jobs = (candidate?.jobs as unknown as JobPosting[] | null) ?? []
 
   for (const r of enrichmentResults) {
@@ -158,7 +219,8 @@ async function loadEvidence(
 
 function describeCriteria(criteria: ICPCriteria): string[] {
   const lines: string[] = []
-  if (criteria.industries.length > 0) lines.push(`- Industries: ${criteria.industries.join(", ")}`)
+  if (criteria.industries.length > 0)
+    lines.push(`- Industries: ${criteria.industries.join(", ")}`)
   const locations = [
     ...criteria.countries,
     ...criteria.regions.map((r) => `${r} (region)`),
@@ -166,21 +228,34 @@ function describeCriteria(criteria: ICPCriteria): string[] {
   ]
   if (locations.length > 0) lines.push(`- Locations: ${locations.join(", ")}`)
   if (criteria.employeeRange) {
-    lines.push(`- Employee count: ${criteria.employeeRange.min ?? "?"} to ${criteria.employeeRange.max ?? "?"}`)
+    lines.push(
+      `- Employee count: ${criteria.employeeRange.min ?? "?"} to ${criteria.employeeRange.max ?? "?"}`,
+    )
   }
-  if (criteria.technologies.length > 0) lines.push(`- Technologies: ${criteria.technologies.join(", ")}`)
+  if (criteria.technologies.length > 0)
+    lines.push(`- Technologies: ${criteria.technologies.join(", ")}`)
   if (criteria.companyTypes.length > 0) {
-    lines.push(`- Company types: ${criteria.companyTypes.map(humanize).join(", ")}`)
+    lines.push(
+      `- Company types: ${criteria.companyTypes.map(humanize).join(", ")}`,
+    )
   }
-  if (criteria.signals.length > 0) lines.push(`- Signals of interest: ${criteria.signals.map(humanize).join(", ")}`)
+  if (criteria.signals.length > 0)
+    lines.push(
+      `- Signals of interest: ${criteria.signals.map(humanize).join(", ")}`,
+    )
   return lines
 }
 
-async function loadContext(orgId: string, companyId: string): Promise<string[]> {
+async function loadContext(
+  orgId: string,
+  companyId: string,
+): Promise<string[]> {
   const sections: string[] = []
   const icp = await getActiveICP(orgId)
   if (icp) {
-    sections.push(`ACTIVE ICP CRITERIA (for relevance context only):\n${describeCriteria(icp.criteria).join("\n") || "- (no criteria)"}`)
+    sections.push(
+      `ACTIVE ICP CRITERIA (for relevance context only):\n${describeCriteria(icp.criteria).join("\n") || "- (no criteria)"}`,
+    )
   }
   const classification = await prisma.leadClassification.findFirst({
     where: { organizationId: orgId, lead: { companyId } },
@@ -196,21 +271,36 @@ async function loadContext(orgId: string, companyId: string): Promise<string[]> 
 
 // ── Prompt construction ──────────────────────────────────────────────────
 
-function buildUserPrompt(companyName: string, items: ResearchEvidenceItem[], context: string[]): string {
+function buildUserPrompt(
+  companyName: string,
+  items: ResearchEvidenceItem[],
+  context: string[],
+): string {
   const sections: string[] = []
   const evidence = items.map((item, i) => `E${i + 1}: ${item.text}`).join("\n")
   sections.push(`COMPANY: ${companyName}`)
-  sections.push(`EVIDENCE (use these IDs when referencing evidence):\n${evidence}`)
+  sections.push(
+    `EVIDENCE (use these IDs when referencing evidence):\n${evidence}`,
+  )
   if (context.length > 0) {
-    sections.push(`CONTEXT (informational only, NOT evidence — do not reference it with an ID):\n${context.join("\n\n")}`)
+    sections.push(
+      `CONTEXT (informational only, NOT evidence — do not reference it with an ID):\n${context.join("\n\n")}`,
+    )
   }
-  sections.push("Research this account. Follow the rules in the system prompt exactly.")
+  sections.push(
+    "Research this account. Follow the rules in the system prompt exactly.",
+  )
   return sections.join("\n\n")
 }
 
 // ── Normalization + persistence ──────────────────────────────────────────
 
-function normalize(dto: ResearchDto, companyId: string, model: string, validReferenceIds: Set<string>): AccountResearchResult {
+function normalize(
+  dto: ResearchDto,
+  companyId: string,
+  model: string,
+  validReferenceIds: Set<string>,
+): ResearchPayload {
   const dedupe = (values: string[]) => [...new Set(values)]
   return {
     companyId,
@@ -221,12 +311,17 @@ function normalize(dto: ResearchDto, companyId: string, model: string, validRefe
     unknowns: dedupe(dto.unknowns),
     // Only references that match the evidence actually supplied survive;
     // model-generated identifiers are never trusted (spec §9).
-    evidenceReferences: dedupe(dto.evidenceReferences.map((r) => r.toUpperCase())).filter((r) => validReferenceIds.has(r)),
+    evidenceReferences: dedupe(
+      dto.evidenceReferences.map((r) => r.toUpperCase()),
+    ).filter((r) => validReferenceIds.has(r)),
     model,
   }
 }
 
-function insufficientResult(companyId: string, companyName: string): AccountResearchResult {
+function insufficientResult(
+  companyId: string,
+  companyName: string,
+): ResearchPayload {
   return {
     companyId,
     companySummary: `Very little information is available about ${companyName}. Only the company name is known; nothing else could be verified.`,
@@ -248,13 +343,42 @@ function insufficientResult(companyId: string, companyName: string): AccountRese
 
 // ── Public API ───────────────────────────────────────────────────────────
 
+export async function loadResearchEvidence(
+  orgId: string,
+  companyId: string,
+): Promise<ResearchEvidenceItem[]> {
+  const company = await prisma.company.findFirst({
+    where: { id: companyId, organizationId: orgId },
+    select: {
+      id: true,
+      name: true,
+      website: true,
+      domain: true,
+      description: true,
+      industry: true,
+      employeeCount: true,
+      employeeRange: true,
+      revenueRange: true,
+      country: true,
+      state: true,
+      city: true,
+      sourceCandidateId: true,
+    },
+  })
+  if (!company) return []
+  return loadEvidence(orgId, company)
+}
+
 export async function researchAccount(
   orgId: string,
   companyId: string,
   options: { aiProvider?: AIProvider; model?: string } = {},
 ): Promise<AccountResearchResult> {
-  const company = await prisma.company.findFirst({ where: { id: companyId, organizationId: orgId } })
-  if (!company) throw new ResearchError("COMPANY_NOT_FOUND", "Company not found")
+  const company = await prisma.company.findFirst({
+    where: { id: companyId, organizationId: orgId },
+  })
+  if (!company)
+    throw new ResearchError("COMPANY_NOT_FOUND", "Company not found")
 
   const items = await loadEvidence(orgId, company)
 
@@ -262,7 +386,11 @@ export async function researchAccount(
   // burning an AI call (spec §35): never fabricate a research summary from
   // nothing.
   if (items.length <= 1) {
-    return persist(orgId, companyId, insufficientResult(companyId, company.name))
+    return persist(
+      orgId,
+      companyId,
+      insufficientResult(companyId, company.name),
+    )
   }
 
   const context = await loadContext(orgId, companyId)
@@ -284,8 +412,13 @@ export async function researchAccount(
   return persist(orgId, companyId, normalize(dto, companyId, model, validIds))
 }
 
-export async function getAccountResearch(orgId: string, companyId: string): Promise<AccountResearchResult | null> {
-  const row = await prisma.accountResearch.findFirst({ where: { organizationId: orgId, companyId } })
+export async function getAccountResearch(
+  orgId: string,
+  companyId: string,
+): Promise<AccountResearchResult | null> {
+  const row = await prisma.accountResearch.findFirst({
+    where: { organizationId: orgId, companyId },
+  })
   if (!row) return null
   return {
     companyId: row.companyId,
@@ -296,10 +429,15 @@ export async function getAccountResearch(orgId: string, companyId: string): Prom
     unknowns: row.unknowns as unknown as string[],
     evidenceReferences: row.evidenceReferences as unknown as string[],
     model: row.model,
+    updatedAt: row.updatedAt,
   }
 }
 
-async function persist(orgId: string, companyId: string, result: AccountResearchResult) {
+async function persist(
+  orgId: string,
+  companyId: string,
+  result: ResearchPayload,
+): Promise<AccountResearchResult> {
   const data = {
     organizationId: orgId,
     companyId,
@@ -311,10 +449,10 @@ async function persist(orgId: string, companyId: string, result: AccountResearch
     evidenceReferences: result.evidenceReferences as unknown as object,
     model: result.model,
   }
-  await prisma.accountResearch.upsert({
+  const row = await prisma.accountResearch.upsert({
     where: { companyId },
     create: data,
     update: data,
   })
-  return result
+  return { ...result, updatedAt: row.updatedAt }
 }
