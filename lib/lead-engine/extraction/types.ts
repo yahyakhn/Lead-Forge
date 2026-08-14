@@ -124,13 +124,6 @@ export interface AIExtractionResult {
 
 export type AIOutcome = { ok: true; result: AIExtractionResult } | { ok: false; error: string }
 
-export interface LeadExtractionAI {
-  extract(input: AIExtractionInput): Promise<AIOutcome>
-  // False when the provider cannot make calls (e.g. missing API key), which
-  // lets the pipeline skip AI without recording a failure.
-  configured: boolean
-}
-
 // A page as the extraction pipeline sees it (decoupled from the DB row so
 // unit tests can pass in-memory HTML).
 export interface PageForExtraction {

@@ -6,7 +6,9 @@ import { classifyPage, isAIWorthyCategory } from "@/lib/lead-engine/extraction/c
 import { extractDeterministic } from "@/lib/lead-engine/extraction/deterministic"
 import { resolveCandidate, qualityFields } from "@/lib/lead-engine/resolution/service"
 import { normalizeCompanyName } from "@/lib/lead-engine/resolution/normalize"
-import { DeepSeekProvider } from "@/lib/lead-engine/extraction/ai"
+import { extractWithAI } from "@/lib/lead-engine/extraction/ai"
+import { getAIProvider } from "@/lib/lead-engine/ai/registry"
+import type { AIProvider } from "@/lib/lead-engine/ai/types"
 import {
   normalizeEmail,
   normalizePhone,
@@ -20,7 +22,6 @@ import type {
   DeterministicContact,
   DeterministicResult,
   EvidenceType,
-  LeadExtractionAI,
   PageForExtraction,
 } from "@/lib/lead-engine/extraction/types"
 
@@ -259,7 +260,7 @@ function buildProvenance(merged: Merged, det: DeterministicResult, aiOmitted: Me
   return provenance as unknown as Prisma.InputJsonValue
 }
 
-export async function processPage(page: PageForExtraction, provider: LeadExtractionAI): Promise<PipelineOutcome> {
+export async function processPage(page: PageForExtraction, provider: AIProvider): Promise<PipelineOutcome> {
   const content = cleanForAI(page)
   const hash = contentHash(content)
   const metaHeadings = Array.isArray(page.metadata?.headings) ? (page.metadata.headings as string[]) : []
@@ -296,7 +297,7 @@ export async function processPage(page: PageForExtraction, provider: LeadExtract
       cached = true
     } else if (run) {
       aiCalled = true
-      const outcome = await provider.extract({ pageUrl: page.url, pageTitle: page.title ?? "", cleanedText: content })
+      const outcome = await extractWithAI(provider, { pageUrl: page.url, pageTitle: page.title ?? "", cleanedText: content })
       if (outcome.ok) {
         ai = outcome.result
         await prisma.extractionRun.update({
@@ -467,7 +468,7 @@ export async function startExtraction(orgId: string, scraperRunId: string): Prom
   return { ok: true, id: extraction.id }
 }
 
-export async function runExtractionJob(extractionRunId: string, provider: LeadExtractionAI = new DeepSeekProvider()): Promise<void> {
+export async function runExtractionJob(extractionRunId: string, provider: AIProvider = getAIProvider()): Promise<void> {
   const run = await prisma.extractionRun.findUnique({ where: { id: extractionRunId }, include: { scraperRun: { select: { organizationId: true } } } })
   if (!run) return
   if (run.status !== CandidateStatus.PENDING) return
@@ -536,7 +537,7 @@ export async function reprocessRun(orgId: string, scraperRunId: string): Promise
   return startExtraction(orgId, scraperRunId)
 }
 
-export async function reprocessPage(orgId: string, rawPageId: string, provider: LeadExtractionAI = new DeepSeekProvider()): Promise<PipelineOutcome> {
+export async function reprocessPage(orgId: string, rawPageId: string, provider: AIProvider = getAIProvider()): Promise<PipelineOutcome> {
   const page = await prisma.rawPage.findFirst({ where: { id: rawPageId, organizationId: orgId } })
   if (!page) throw new Error("Page not found in this organization")
   return processPage(page as unknown as PageForExtraction, provider)

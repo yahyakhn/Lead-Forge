@@ -1,8 +1,10 @@
-import { z } from "zod"
-import type { AIOutcome, AIExtractionInput, LeadExtractionAI } from "@/lib/lead-engine/extraction/types"
+// TASK 016: the extraction pipeline drives the generic AIProvider; this
+// module owns only the extraction-specific prompt and schema. Deterministic
+// extraction is untouched — AI stays gated where the pipeline already calls it.
 
-// AI extraction provider (spec §30-§36). DeepSeek is the production provider;
-// the interface lets tests inject a mock so the real API is never called.
+import { z } from "zod"
+import type { AIProvider } from "@/lib/lead-engine/ai/types"
+import type { AIExtractionInput, AIOutcome } from "@/lib/lead-engine/extraction/types"
 
 const aiContactSchema = z.object({
   fullName: z.string().nullish().default(null),
@@ -59,94 +61,16 @@ Schema:
   "confidence": number (0-1, how certain you are the extracted data is supported by the page)
 }`
 
-export function parseAIJson(text: string): unknown {
-  const trimmed = text.trim()
+export async function extractWithAI(provider: AIProvider, input: AIExtractionInput): Promise<AIOutcome> {
+  if (!provider.configured) return { ok: false, error: "AI provider is not configured" }
+  const userPrompt = `Page URL: ${input.pageUrl}\nPage title: ${input.pageTitle}\n\nPage content:\n${input.cleanedText}`
   try {
-    return JSON.parse(trimmed)
-  } catch {
-    const start = trimmed.indexOf("{")
-    const end = trimmed.lastIndexOf("}")
-    if (start === -1 || end === -1 || end <= start) throw new Error("AI returned no JSON object")
-    return JSON.parse(trimmed.slice(start, end + 1))
-  }
-}
-
-export function validateAIResult(text: string): AIOutcome {
-  try {
-    const parsed = parseAIJson(text)
-    const result = aiResultSchema.parse(parsed)
-    return {
-      ok: true,
-      result: { ...result, usage: { promptChars: 0, completionChars: text.length } },
-    }
+    const result = await provider.generateStructured(
+      { systemPrompt: SYSTEM_PROMPT, userPrompt, temperature: 0, maxTokens: 1500, responseFormat: "json_object" },
+      aiResultSchema,
+    )
+    return { ok: true, result: { ...result, usage: { promptChars: userPrompt.length, completionChars: JSON.stringify(result).length } } }
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "AI output failed validation" }
-  }
-}
-
-function aiConfig() {
-  return {
-    apiKey: process.env.AI_API_KEY?.trim() || "",
-    model: process.env.AI_MODEL?.trim() || "deepseek-chat",
-    baseUrl: process.env.AI_BASE_URL?.trim() || "https://api.deepseek.com",
-  }
-}
-
-export class DeepSeekProvider implements LeadExtractionAI {
-  readonly configured: boolean
-  private readonly apiKey: string
-  private readonly model: string
-  private readonly baseUrl: string
-
-  constructor(config?: { apiKey?: string; model?: string; baseUrl?: string }) {
-    const env = aiConfig()
-    this.apiKey = config?.apiKey?.trim() || env.apiKey
-    this.model = config?.model?.trim() || env.model
-    this.baseUrl = config?.baseUrl?.trim() || env.baseUrl
-    this.configured = Boolean(this.apiKey)
-  }
-
-  async extract(input: AIExtractionInput): Promise<AIOutcome> {
-    if (!this.apiKey) return { ok: false, error: "AI_API_KEY is not configured" }
-    const prompt = `Page URL: ${input.pageUrl}\nPage title: ${input.pageTitle}\n\nPage content:\n${input.cleanedText}`
-    try {
-      const response = await fetch(`${this.baseUrl.replace(/\/$/, "")}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: `Bearer ${this.apiKey}`,
-        },
-        body: JSON.stringify({
-          model: this.model,
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            { role: "user", content: prompt },
-          ],
-          response_format: { type: "json_object" },
-          temperature: 0,
-          max_tokens: 1500,
-        }),
-        signal: AbortSignal.timeout(60_000),
-      })
-      if (!response.ok) {
-        return { ok: false, error: `AI provider error: HTTP ${response.status}` }
-      }
-      const body = (await response.json()) as {
-        choices?: { message?: { content?: string } }[]
-        usage?: { prompt_tokens?: number; completion_tokens?: number }
-      }
-      const content = body.choices?.[0]?.message?.content
-      if (!content) return { ok: false, error: "AI provider returned empty content" }
-      const outcome = validateAIResult(content)
-      if (outcome.ok) {
-        outcome.result.usage = {
-          promptChars: prompt.length,
-          completionChars: content.length,
-        }
-      }
-      return outcome
-    } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : "AI request failed" }
-    }
+    return { ok: false, error: e instanceof Error ? e.message : "AI extraction failed" }
   }
 }
