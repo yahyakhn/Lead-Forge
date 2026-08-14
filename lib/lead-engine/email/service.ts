@@ -142,6 +142,11 @@ export async function updateSettings(
     senderEmail?: string | null
     replyTo?: string | null
     signature?: string | null
+    timezone?: string
+    sendStartHour?: number
+    sendEndHour?: number
+    skipWeekends?: boolean
+    blackoutDates?: string[]
   },
   actor?: { id: string; name: string } | null,
 ) {
@@ -170,6 +175,11 @@ export async function updateSettings(
       ...(input.senderEmail !== undefined ? { senderEmail: input.senderEmail?.trim() || null } : {}),
       ...(input.replyTo !== undefined ? { replyTo: input.replyTo?.trim() || null } : {}),
       ...(input.signature !== undefined ? { signature: input.signature?.trim() || null } : {}),
+      ...(input.timezone !== undefined ? { timezone: input.timezone?.trim() || "UTC" } : {}),
+      ...(input.sendStartHour !== undefined ? { sendStartHour: clamp(input.sendStartHour, 0, 23) } : {}),
+      ...(input.sendEndHour !== undefined ? { sendEndHour: clamp(input.sendEndHour, 0, 23) } : {}),
+      ...(input.skipWeekends !== undefined ? { skipWeekends: input.skipWeekends } : {}),
+      ...(input.blackoutDates !== undefined ? { blackoutDates: input.blackoutDates as unknown as object } : {}),
     },
   })
   await audit(orgId, EmailAuditAction.EMAIL_SETTINGS_UPDATED, actor ?? null, undefined, { settings: true })

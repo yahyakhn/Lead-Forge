@@ -9,6 +9,7 @@ import {
   runEmailVerificationJob,
 } from "@/lib/lead-engine/email/service"
 import { processOutboxMessage } from "@/lib/lead-engine/outreach/service"
+import { runScheduledSequenceSteps } from "@/lib/lead-engine/sequences/service"
 
 // In-process development queue. Runs are executed shortly after enqueue in
 // this process; cancellation is honored because the worker re-checks the
@@ -94,4 +95,22 @@ export function enqueueOutboxMessage(communicationId: string): void {
       console.log(`outbox.queue.error communicationId=${communicationId} error=${e instanceof Error ? e.message : "unknown"}`)
     }
   })
+}
+
+// Sequence scheduler: run due enrollments for one org (webhook-triggered) or
+// all orgs (dev interval). Claim is atomic, so overlapping scans are safe.
+export function enqueueSequenceScan(orgId?: string): void {
+  setImmediate(async () => {
+    try {
+      await runScheduledSequenceSteps(orgId)
+    } catch (e) {
+      console.log(`sequence.scan.error orgId=${orgId ?? "all"} error=${e instanceof Error ? e.message : "unknown"}`)
+    }
+  })
+}
+
+// ponytail: dev-only 60s poll — swap for a durable scheduler with the real
+// job queue; skipped under vitest so tests stay deterministic.
+if (!("VITEST" in process.env)) {
+  setInterval(() => enqueueSequenceScan(), 60_000)
 }

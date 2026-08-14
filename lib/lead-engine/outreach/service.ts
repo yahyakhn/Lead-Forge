@@ -510,7 +510,7 @@ function validateSubject(subject: string): string | null {
 export async function sendEmail(
   orgId: string,
   actor: Actor,
-  input: { leadId: string; emailId: string; cc?: string; bcc?: string; subject: string; body: string; templateId?: string | null; accountId?: string | null; confirmCooldown?: boolean },
+  input: { leadId: string; emailId: string; cc?: string; bcc?: string; subject: string; body: string; templateId?: string | null; accountId?: string | null; confirmCooldown?: boolean; metadata?: object },
 ): Promise<{ ok: true; id: string } | { ok: false; code: string; error: string }> {
   const subjectError = validateSubject(input.subject)
   if (subjectError) return { ok: false, code: "MESSAGE_REJECTED", error: subjectError }
@@ -566,7 +566,7 @@ export async function sendEmail(
         bcc: input.bcc?.trim() || null,
         provider: providerId,
         idempotencyKey,
-        metadata: { fromName: account?.name ?? null, fromEmail: account?.email ?? null } as object,
+        metadata: { fromName: account?.name ?? null, fromEmail: account?.email ?? null, ...(input.metadata ?? {}) } as object,
         createdById: actor.id,
       },
     })
@@ -737,7 +737,8 @@ async function doProcessOutboxMessage(messageId: string): Promise<void> {
     await audit(comm.organizationId, EmailAuditAction.EMAIL_SENT, actorFrom(comm), comm.emailId ?? undefined, { communicationId: comm.id, providerMessageId: result.providerMessageId })
     if (comm.leadId) {
       await prisma.lead.updateMany({ where: { id: comm.leadId, outreachStatus: OutreachStatus.NOT_CONTACTED }, data: { outreachStatus: OutreachStatus.CONTACTED, lastActivityAt: new Date() } })
-      await createActivity(comm.organizationId, { type: "EMAIL", title: `Email sent${comm.subject ? ` — ${comm.subject}` : ""}`, leadId: comm.leadId, contactId: comm.contactId ?? undefined }, actorFrom(comm)?.id)
+      const seq = (comm.metadata as { source?: string } | null)?.source === "SEQUENCE"
+      await createActivity(comm.organizationId, { type: "EMAIL", title: `${seq ? "Automated sequence email sent" : "Email sent"}${comm.subject ? ` — ${comm.subject}` : ""}`, leadId: comm.leadId, contactId: comm.contactId ?? undefined }, actorFrom(comm)?.id)
     }
   } else {
     const transient = TRANSIENT_CODES.has(result.errorCode ?? "UNKNOWN")

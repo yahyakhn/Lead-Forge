@@ -54,6 +54,7 @@ enum ActivityType {
   TASK
   STATUS_CHANGE
   RESEARCH
+  SEQUENCE
 }
 
 enum LeadSourceType {
@@ -195,6 +196,11 @@ model Organization {
   emailTemplates           EmailTemplate[]
   communications           Communication[]
   outboxMessages           OutboxMessage[]
+  sequences                Sequence[]
+  sequenceEnrollments      SequenceEnrollment[]
+  sequenceStepExecutions   SequenceStepExecution[]
+  sequenceTasks            SequenceTask[]
+  sequenceAuditEvents      SequenceAuditEvent[]
   emailWebhookEvents       EmailWebhookEvent[]
   createdAt                DateTime                  @default(now())
   updatedAt                DateTime                  @updatedAt
@@ -1290,6 +1296,13 @@ model EmailSettings {
   replyTo                String?
   signature              String?
   defaultAccountId       String?
+  // TASK 016: business-hour scheduling (§40-§43). Timestamps stay UTC in the
+  // DB; windows/weekends/blackouts are evaluated in the org timezone.
+  timezone               String       @default("UTC")
+  sendStartHour          Int          @default(9)
+  sendEndHour            Int          @default(17)
+  skipWeekends           Boolean      @default(true)
+  blackoutDates          Json?
   createdAt              DateTime     @default(now())
   updatedAt              DateTime     @updatedAt
 }
@@ -1692,4 +1705,227 @@ model EmailWebhookEvent {
 
   @@unique([organizationId, providerEventId])
   @@index([organizationId, provider, createdAt])
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// TASK 016: automated outreach sequences & follow-up engine.
+// Deterministic, config-driven step engine. No code execution, no AI, no
+// limit bypass: every automated send re-uses TASK 015 safety/limits.
+// ═════════════════════════════════════════════════════════════════════════
+
+enum SequenceStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum SequenceStepType {
+  EMAIL
+  WAIT
+  TASK
+  CONDITION
+  END
+}
+
+enum WaitUnit {
+  MINUTES
+  HOURS
+  DAYS
+}
+
+enum SequenceEnrollmentStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  STOPPED
+  FAILED
+  UNSUBSCRIBED
+  BOUNCED
+}
+
+enum SequenceExitReason {
+  COMPLETED
+  REPLIED
+  MEETING_BOOKED
+  DISQUALIFIED
+  UNSUBSCRIBED
+  BOUNCED
+  MANUAL_STOP
+  SEQUENCE_ARCHIVED
+  DO_NOT_CONTACT
+  FAILED
+}
+
+enum SequenceStepExecutionStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  SKIPPED
+  FAILED
+  CANCELLED
+}
+
+enum SequencePauseReason {
+  USER_PAUSED
+  SEQUENCE_PAUSED
+  SYSTEM_PAUSED
+  PROVIDER_ISSUE
+  MISSING_DATA
+}
+
+enum SequenceAuditAction {
+  SEQUENCE_CREATED
+  SEQUENCE_UPDATED
+  SEQUENCE_ACTIVATED
+  SEQUENCE_PAUSED
+  SEQUENCE_ARCHIVED
+  SEQUENCE_CLONED
+  ENROLLMENT_CREATED
+  ENROLLMENT_PAUSED
+  ENROLLMENT_RESUMED
+  ENROLLMENT_STOPPED
+  SEQUENCE_STEP_EXECUTED
+  SEQUENCE_STEP_FAILED
+  SEQUENCE_COMPLETED
+  SEQUENCE_STOPPED
+}
+
+model Sequence {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  description    String?
+  status         SequenceStatus @default(DRAFT)
+  version        Int          @default(1)
+  // Optional per-sequence cap on automated emails per rolling day. Must be
+  // <= organization policy (enforced in service, §45).
+  maxDailyEmails Int?
+  ownerId        String?
+  createdById    String?
+  steps          SequenceStep[]
+  enrollments    SequenceEnrollment[]
+  auditEvents    SequenceAuditEvent[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId, status, updatedAt])
+}
+
+// Live builder steps. Execution never reads these after enrollment: each
+// enrollment carries an immutable snapshot (stepsJson) so edits do not
+// rewrite history (§48-§49, §88-§89).
+model SequenceStep {
+  id         String           @id @default(cuid())
+  sequenceId String
+  sequence   Sequence         @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  position   Int
+  type       SequenceStepType
+  name       String
+  config     Json
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  @@index([sequenceId, position])
+}
+
+model SequenceEnrollment {
+  id              String                   @id @default(cuid())
+  organizationId  String
+  organization    Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sequenceId      String
+  sequence        Sequence                 @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  leadId          String
+  contactId       String?
+  emailId         String?
+  status          SequenceEnrollmentStatus @default(ACTIVE)
+  version         Int                      @default(1)
+  // Immutable step snapshot captured at enrollment time (§48-§49).
+  stepsJson       Json
+  currentPosition Int?
+  nextRunAt       DateTime?
+  pauseReason     SequencePauseReason?
+  startedAt       DateTime                 @default(now())
+  completedAt     DateTime?
+  exitReason      SequenceExitReason?
+  enrolledById    String?
+  // Partial-unique guard: "ACTIVE" when status = ACTIVE, null otherwise.
+  // Enforces one active enrollment per (org, sequence, lead) (§12, §82).
+  activeGuard     String?
+  executions      SequenceStepExecution[]
+  tasks           SequenceTask[]
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+
+  @@unique([organizationId, sequenceId, leadId, activeGuard])
+  @@index([organizationId, sequenceId, status])
+  @@index([organizationId, status, nextRunAt])
+  @@index([organizationId, leadId, status])
+}
+
+// One row per (enrollment, position) — the claim/lock for step execution.
+// Idempotency: an execution can only be claimed once; retries mutate the
+// same row (attempts, backoff), never duplicate it (§36-§39, §84-§87).
+model SequenceStepExecution {
+  id              String                     @id @default(cuid())
+  organizationId  String
+  organization    Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  enrollmentId    String
+  enrollment      SequenceEnrollment         @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  stepId          String?
+  position        Int
+  status          SequenceStepExecutionStatus @default(PENDING)
+  scheduledAt     DateTime                   @default(now())
+  startedAt       DateTime?
+  completedAt     DateTime?
+  attempts        Int                        @default(0)
+  errorCode       String?
+  errorMessage    String?
+  communicationId String?
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
+
+  @@unique([enrollmentId, position])
+  @@index([organizationId, status, scheduledAt])
+}
+
+// Manual CRM task created by a TASK step (§72-§74).
+model SequenceTask {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  enrollmentId   String?
+  enrollment     SequenceEnrollment? @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  sequenceId     String?
+  leadId         String?
+  contactId      String?
+  title          String
+  description    String?
+  assignedToId   String?
+  dueAt          DateTime?
+  completedAt    DateTime?
+  createdById    String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId, assignedToId, dueAt])
+  @@index([organizationId, leadId])
+}
+
+model SequenceAuditEvent {
+  id             String              @id @default(cuid())
+  organizationId String
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  action         SequenceAuditAction
+  sequenceId     String?
+  sequence       Sequence?           @relation(fields: [sequenceId], references: [id], onDelete: SetNull)
+  enrollmentId   String?
+  actorUserId    String?
+  actorName      String?
+  details        Json?
+  createdAt      DateTime            @default(now())
+
+  @@index([organizationId, sequenceId, createdAt])
+  @@index([organizationId, createdAt])
 }

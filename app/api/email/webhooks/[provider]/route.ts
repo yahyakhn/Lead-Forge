@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { processProviderWebhook, webhookSignatureValid } from "@/lib/lead-engine/outreach/service"
+import { enqueueSequenceScan } from "@/lib/lead-engine/job-queue"
 
 // TASK 015 §56-§58: inbound provider webhook endpoint. Signature-gated with a
 // shared secret from env (PROVIDER_WEBHOOK_SECRET); disabled when unset.
@@ -26,5 +27,6 @@ export async function POST(_req: Request, { params }: { params: Promise<{ provid
   }
 
   const result = await processProviderWebhook(orgId!, provider, body)
+  if (result.ok && orgId) enqueueSequenceScan(orgId) // §28-§31: reply/bounce/unsubscribe auto-stop is re-checked at the next step
   return NextResponse.json(result, { status: result.ok ? 200 : 400 })
 }
