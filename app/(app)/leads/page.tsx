@@ -11,6 +11,9 @@ import { PriorityBadge, ScoreBadge, StatusBadge } from "@/components/crm/badges"
 import { formatDate } from "@/lib/format"
 import { createLeadAction } from "@/lib/actions"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { buttonVariants } from "@/components/ui/button"
+import { CsvImportDialog } from "@/components/crm/csv-import-dialog"
+import { DownloadIcon } from "lucide-react"
 
 type SearchParams = Record<string, string | string[] | undefined>
 
@@ -54,18 +57,39 @@ export default async function LeadsPage({
 
   const ownerOptions = users.map((u) => ({ value: u.id, label: u.name, hint: u.email }))
 
+  const exportParams = new URLSearchParams()
+  for (const [key, value] of [
+    ["search", first("search")],
+    ["status", first("status")],
+    ["priority", first("priority")],
+    ["ownerId", first("owner")],
+    ["source", first("source")],
+    ["emailStatus", first("emailStatus")],
+    ["hasEmail", first("hasEmail")],
+    ["minScore", first("minScore")],
+  ] as const) {
+    if (value) exportParams.set(key, value)
+  }
+
   return (
     <div>
       <PageHeader
         title="Leads"
         description={`${result.total.toLocaleString()} leads`}
         actions={
-          <LeadForm
-            action={createLeadAction}
-            companies={companies.map((c) => ({ value: c.id, label: c.name, hint: c.domain ?? undefined }))}
-            contacts={contacts.map((c) => ({ value: c.id, label: c.fullName, hint: c.email ?? undefined }))}
-            owners={ownerOptions}
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <a href={`/api/leads/export?${exportParams.toString()}`} className={buttonVariants({ variant: "outline" })}>
+              <DownloadIcon />
+              Export
+            </a>
+            <CsvImportDialog />
+            <LeadForm
+              action={createLeadAction}
+              companies={companies.map((c) => ({ value: c.id, label: c.name, hint: c.domain ?? undefined }))}
+              contacts={contacts.map((c) => ({ value: c.id, label: c.fullName, hint: c.email ?? undefined }))}
+              owners={ownerOptions}
+            />
+          </div>
         }
       />
 

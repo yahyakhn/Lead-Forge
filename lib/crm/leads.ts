@@ -13,7 +13,7 @@ const LEAD_INCLUDE = {
   sourceCandidate: { select: { id: true, companyName: true, contactFullName: true, runId: true } },
 } as const
 
-const LEAD_INCLUDE_WITH_SCORES = {
+export const LEAD_INCLUDE_WITH_SCORES = {
   ...LEAD_INCLUDE,
   scores: {
     where: { scoreStatus: "CURRENT" },
@@ -61,8 +61,25 @@ export interface LeadFilters {
 
 export async function listLeads(orgId: string, filters: LeadFilters) {
   const { page, pageSize } = parsePagination(filters)
+  const where = buildLeadWhere(orgId, filters)
+  const [total, data] = await Promise.all([
+    prisma.lead.count({ where }),
+    prisma.lead.findMany({
+      where,
+      include: LEAD_INCLUDE_WITH_SCORES,
+      orderBy: filters.sortBy === "readiness" ? { contactReadiness: "desc" } : { createdAt: "desc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+  ])
+  return { data, page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) }
+}
+
+// Shared by the leads list and CSV export (TASK 022 §38) so filters stay
+// identical — no second filtering system.
+export function buildLeadWhere(orgId: string, filters: LeadFilters): Prisma.LeadWhereInput {
   const search = filters.search?.trim()
-  const where: Prisma.LeadWhereInput = {
+  return {
     organizationId: orgId,
     ...(filters.status ? { status: filters.status as LeadStatus } : {}),
     ...(filters.priority ? { priority: filters.priority as LeadPriority } : {}),
@@ -88,17 +105,6 @@ export async function listLeads(orgId: string, filters: LeadFilters) {
         }
       : {}),
   }
-  const [total, data] = await Promise.all([
-    prisma.lead.count({ where }),
-    prisma.lead.findMany({
-      where,
-      include: LEAD_INCLUDE_WITH_SCORES,
-      orderBy: filters.sortBy === "readiness" ? { contactReadiness: "desc" } : { createdAt: "desc" },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-  ])
-  return { data, page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) }
 }
 
 export async function updateLead(orgId: string, id: string, input: Partial<LeadInput>, userId?: string) {
