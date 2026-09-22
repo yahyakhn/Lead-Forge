@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { createSession, hashPassword } from "@/lib/auth"
 import { registerSchema } from "@/lib/validators"
+import { PrismaClient } from "@/generated/prisma/client"
 import { createDefaultPipelineStages } from "@/lib/crm/pipeline"
 
 export async function POST(request: Request) {
@@ -28,7 +29,7 @@ export async function POST(request: Request) {
     const organization = await tx.organization.create({
       data: { name: organizationName },
     })
-    await createDefaultPipelineStages(organization.id)
+    await createDefaultPipelineStages(tx as PrismaClient, organization.id)
     return tx.user.create({
       data: {
         name,

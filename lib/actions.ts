@@ -77,6 +77,7 @@ import {
   researchAccount,
   type AccountResearchResult,
 } from "@/lib/lead-engine/research/service"
+import { updateAiSettings, clearAiSettings, getAIProviderForOrg } from "@/lib/lead-engine/ai/settings"
 
 export type ActionResult = { ok: true; id?: string; redirectTo?: string } | { ok: false; error: string }
 
@@ -604,18 +605,50 @@ export async function updateEnrichmentSettingsAction(input: {
   }
 }
 
+const aiSettingsSchema = z.object({
+  apiKey: z.string().trim(),
+  baseUrl: z.string().trim(),
+  model: z.string().trim(),
+})
+
+export async function updateAiSettingsAction(input: unknown): Promise<ActionResult> {
+  const session = await requireSession()
+  await requireAdmin()
+  const parsed = aiSettingsSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
+  try {
+    if (parsed.data.apiKey) await updateAiSettings(session.organization.id, parsed.data)
+    revalidatePath("/settings/ai")
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not save AI settings" }
+  }
+}
+
+export async function clearAiSettingsAction(): Promise<ActionResult> {
+  const session = await requireSession()
+  await requireAdmin()
+  try {
+    await clearAiSettings(session.organization.id)
+    revalidatePath("/settings/ai")
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not clear AI settings" }
+  }
+}
+
 const parseIcpPromptSchema = z.object({
   text: z.string().trim().min(1, "Describe your ideal customer profile first").max(2000, "ICP description is too long (max 2000 characters)"),
 })
 
 export async function parseIcpPromptAction(input: unknown): Promise<ActionResult | { ok: true; parsed: ParsedIcp }> {
-  await requireSession()
+  const session = await requireSession()
   const parsed = parseIcpPromptSchema.safeParse(input)
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
   }
   try {
-    const result = await parseIcpPrompt(parsed.data.text)
+    const result = await parseIcpPrompt(parsed.data.text, { aiProvider: await getAIProviderForOrg(session.organization.id) })
     return { ok: true, parsed: result }
   } catch (e) {
     if (e instanceof IcpParseError || e instanceof AIError) {

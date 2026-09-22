@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db"
+import { PrismaClient } from "@/generated/prisma/client"
 import type { LeadStatus } from "@/generated/prisma/client"
 import { updateLead } from "@/lib/crm/leads"
 
@@ -34,7 +35,10 @@ export const DEFAULT_PIPELINE_STAGES: PipelineStageSpec[] = [
   { name: "LOST", slug: "lost", position: 8, color: "#ef4444", isClosed: true, isWon: false },
 ]
 
-export async function createDefaultPipelineStages(orgId: string): Promise<void> {
+export async function createDefaultPipelineStages(
+  prisma: PrismaClient,
+  orgId: string,
+): Promise<void> {
   await prisma.pipelineStage.createMany({
     data: DEFAULT_PIPELINE_STAGES.map((s) => ({ ...s, organizationId: orgId })),
   })

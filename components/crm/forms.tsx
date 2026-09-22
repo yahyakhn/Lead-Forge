@@ -59,7 +59,7 @@ export function FormDialog({
 
   return (
     <Dialog>
-      <DialogTrigger render={<span />}>{trigger}</DialogTrigger>
+      <DialogTrigger>{trigger}</DialogTrigger>
       <DialogContent className={className}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
@@ -238,7 +238,7 @@ export function LeadForm({
 
   return (
     <Dialog>
-      <DialogTrigger render={<span />}>
+      <DialogTrigger>
         <Button>New Lead</Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-lg">
@@ -359,7 +359,7 @@ export function CompanyEditForm({
   const [status, setStatus] = useState(company.status)
   return (
     <Dialog>
-      <DialogTrigger render={<span />}>
+      <DialogTrigger>
         <Button variant="outline">Edit Company</Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-lg">
@@ -447,7 +447,7 @@ export function ContactForm({
 
   return (
     <Dialog>
-      <DialogTrigger render={<span />}>
+      <DialogTrigger>
         <Button>New Contact</Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-lg">
@@ -647,7 +647,7 @@ export function AddToListDialog({
 
   return (
     <Dialog>
-      <DialogTrigger render={<span />}>
+      <DialogTrigger>
         <Button variant="outline">Add to List</Button>
       </DialogTrigger>
       <DialogContent>
@@ -733,7 +733,7 @@ export function ContactEditForm({
   const [verificationStatus, setVerificationStatus] = useState(contact.verificationStatus)
   return (
     <Dialog>
-      <DialogTrigger render={<span />}>
+      <DialogTrigger>
         <Button variant="outline">Edit Contact</Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-lg">

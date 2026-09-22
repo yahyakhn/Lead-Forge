@@ -7,7 +7,7 @@ import { extractDeterministic } from "@/lib/lead-engine/extraction/deterministic
 import { resolveCandidate, qualityFields } from "@/lib/lead-engine/resolution/service"
 import { normalizeCompanyName } from "@/lib/lead-engine/resolution/normalize"
 import { extractWithAI } from "@/lib/lead-engine/extraction/ai"
-import { getAIProvider } from "@/lib/lead-engine/ai/registry"
+import { getAIProviderForOrg } from "@/lib/lead-engine/ai/settings"
 import type { AIProvider } from "@/lib/lead-engine/ai/types"
 import {
   normalizeEmail,
@@ -468,10 +468,11 @@ export async function startExtraction(orgId: string, scraperRunId: string): Prom
   return { ok: true, id: extraction.id }
 }
 
-export async function runExtractionJob(extractionRunId: string, provider: AIProvider = getAIProvider()): Promise<void> {
+export async function runExtractionJob(extractionRunId: string, provider?: AIProvider): Promise<void> {
   const run = await prisma.extractionRun.findUnique({ where: { id: extractionRunId }, include: { scraperRun: { select: { organizationId: true } } } })
   if (!run) return
   if (run.status !== CandidateStatus.PENDING) return
+  const resolved = provider ?? (await getAIProviderForOrg(run.scraperRun.organizationId))
 
   await prisma.extractionRun.update({ where: { id: run.id }, data: { status: CandidateStatus.PROCESSING, startedAt: new Date() } })
   let pagesProcessed = 0
@@ -496,7 +497,7 @@ export async function runExtractionJob(extractionRunId: string, provider: AIProv
     const outcomes = await Promise.all(
       batch.map(async (page) => {
         try {
-          return await processPage(page as PageForExtraction, provider)
+          return await processPage(page as PageForExtraction, resolved)
         } catch (e) {
           console.log(`extraction.page.failed pageId=${page.id} error=${e instanceof Error ? e.message : "unknown"}`)
           return { status: CandidateStatus.FAILED, aiCalled: false, cached: false } as PipelineOutcome
@@ -537,10 +538,11 @@ export async function reprocessRun(orgId: string, scraperRunId: string): Promise
   return startExtraction(orgId, scraperRunId)
 }
 
-export async function reprocessPage(orgId: string, rawPageId: string, provider: AIProvider = getAIProvider()): Promise<PipelineOutcome> {
+export async function reprocessPage(orgId: string, rawPageId: string, provider?: AIProvider): Promise<PipelineOutcome> {
   const page = await prisma.rawPage.findFirst({ where: { id: rawPageId, organizationId: orgId } })
   if (!page) throw new Error("Page not found in this organization")
-  return processPage(page as unknown as PageForExtraction, provider)
+  const resolved = provider ?? (await getAIProviderForOrg(orgId))
+  return processPage(page as unknown as PageForExtraction, resolved)
 }
 
 // ── Read paths (organization-scoped) ────────────────────────────────────

@@ -46,13 +46,14 @@ export function Pagination({
           }
           variant="ghost"
           size="icon-sm"
+          nativeButton={false}
         >
           <ChevronLeftIcon />
         </Button>
         {pages.map((p) => {
           const variant = p === page ? "secondary" : "ghost"
           return (
-            <Button key={p} render={<a href={pageHref(pathname, params, param, p)} />} variant={variant as "secondary" | "ghost"} size="icon-sm" className="text-xs">
+            <Button key={p} render={<a href={pageHref(pathname, params, param, p)} />} variant={variant as "secondary" | "ghost"} size="icon-sm" className="text-xs" nativeButton={false}>
               {p}
             </Button>
           )
@@ -67,6 +68,7 @@ export function Pagination({
           }
           variant="ghost"
           size="icon-sm"
+          nativeButton={false}
         >
           <ChevronRightIcon />
         </Button>

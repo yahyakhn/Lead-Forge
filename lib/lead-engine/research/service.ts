@@ -9,7 +9,7 @@ import { z } from "zod"
 import { prisma } from "@/lib/db"
 import { getActiveICP } from "@/lib/crm/icp"
 import { humanize, type ICPCriteria } from "@/lib/crm/icp-shared"
-import { getAIProvider } from "@/lib/lead-engine/ai/registry"
+import { getOrgAIProvider } from "@/lib/lead-engine/ai/settings"
 import type { AIProvider } from "@/lib/lead-engine/ai/types"
 import type {
   FieldEvidence,
@@ -394,8 +394,9 @@ export async function researchAccount(
   }
 
   const context = await loadContext(orgId, companyId)
-  const provider = options.aiProvider ?? getAIProvider()
-  const model = options.model ?? process.env.AI_MODEL ?? "deepseek-chat"
+  const { provider, model } = options.aiProvider
+    ? { provider: options.aiProvider, model: options.model ?? process.env.AI_MODEL ?? "deepseek-chat" }
+    : await getOrgAIProvider(orgId)
   const dto = await provider.generateStructured(
     {
       systemPrompt: RESEARCH_SYSTEM_PROMPT,

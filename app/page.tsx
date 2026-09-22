@@ -28,7 +28,7 @@ export default function Home() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Button render={<a href="/api/health" />}>Check system status</Button>
+          <Button render={<a href="/api/health" />} nativeButton={false}>Check system status</Button>
         </CardContent>
       </Card>
     </main>

@@ -8,7 +8,7 @@ import { prisma } from "@/lib/db"
 import { getICP } from "@/lib/crm/icp"
 import { getLead } from "@/lib/crm/leads"
 import { latestLeadScore } from "@/lib/lead-engine/scoring/service"
-import { getAIProvider } from "@/lib/lead-engine/ai/registry"
+import { getOrgAIProvider } from "@/lib/lead-engine/ai/settings"
 import type { AIProvider } from "@/lib/lead-engine/ai/types"
 import { humanize, rangeLabel, type ICPCriteria } from "@/lib/crm/icp-shared"
 import type { FieldEvidence } from "@/lib/lead-engine/extraction/types"
@@ -353,8 +353,9 @@ export async function classifyLead(
     ? `deterministic score: icpScore ${latestScore.icpScore}, qualification ${latestScore.qualification}`
     : null
 
-  const provider = options.aiProvider ?? getAIProvider()
-  const model = options.model ?? process.env.AI_MODEL ?? "deepseek-chat"
+  const { provider, model } = options.aiProvider
+    ? { provider: options.aiProvider, model: options.model ?? process.env.AI_MODEL ?? "deepseek-chat" }
+    : await getOrgAIProvider(orgId)
   const dto = await provider.generateStructured(
     {
       systemPrompt: CLASSIFICATION_SYSTEM_PROMPT,

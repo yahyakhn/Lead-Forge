@@ -242,6 +242,7 @@ model Organization {
   scoringAuditEvents       ScoringAuditEvent[]
   leadClassifications      LeadClassification[]
   accountResearches        AccountResearch[]
+  aiSettings               AiSettings?
   enrichmentSettings       EnrichmentSettings?
   enrichmentRequests       EnrichmentRequest[]
   enrichmentResults        EnrichmentResult[]
@@ -1171,6 +1172,19 @@ model EnrichmentSettings {
   batchMaxLeads      Int          @default(100)
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
+}
+
+// Per-org AI provider credentials. The DB value wins over the AI_API_KEY
+// env var; env stays the default for orgs with no row.
+model AiSettings {
+  id             String       @id @default(cuid())
+  organizationId String       @unique
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  apiKey         String?
+  baseUrl        String?
+  model          String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 }
 
 // One enrichment job per (lead|candidate, provider) request.

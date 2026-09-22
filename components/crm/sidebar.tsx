@@ -85,7 +85,7 @@ const NAV: NavGroup[] = [
   },
   {
     section: "Settings",
-    items: [{ href: "/settings/enrichment", label: "Enrichment", icon: SettingsIcon }, { href: "/settings/email", label: "Email", icon: MailIcon }],
+    items: [{ href: "/settings/ai", label: "AI", icon: SparklesIcon }, { href: "/settings/enrichment", label: "Enrichment", icon: SettingsIcon }, { href: "/settings/email", label: "Email", icon: MailIcon }],
   },
 ]
 
